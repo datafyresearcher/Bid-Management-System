@@ -70,6 +70,14 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
+      - name: Check the Vercel token
+        run: |
+          if ! vercel whoami --token="$VERCEL_TOKEN" > /dev/null 2>&1; then
+            echo "::error::The Vercel token is expired or invalid. Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
+            exit 1
+          fi
+          echo "Vercel token is valid"
+
       - name: Pull Vercel project settings
         working-directory: services/api
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
@@ -93,6 +101,14 @@ jobs:
 
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
+
+      - name: Check the Vercel token
+        run: |
+          if ! vercel whoami --token="$VERCEL_TOKEN" > /dev/null 2>&1; then
+            echo "::error::The Vercel token is expired or invalid. Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
+            exit 1
+          fi
+          echo "Vercel token is valid"
 
       - name: Pull Vercel project settings
         working-directory: apps/web
