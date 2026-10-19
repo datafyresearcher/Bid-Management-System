@@ -193,6 +193,18 @@ export default function OpportunityPage() {
             <div className="card mb-14">
               <h3>AI rationale</h3>
               <p>{opp.ai_rationale || "Not scored yet."}</p>
+              {opp.ai_confidence !== null && opp.ai_confidence !== undefined ? (
+                <p className="muted">
+                  Confidence {Math.round(opp.ai_confidence * 100)}% — how much of this score rests on
+                  evidence in the knowledge base rather than on absent data.
+                </p>
+              ) : null}
+              {opp.extraction_grade ? (
+                <p className="muted">
+                  Extraction grade <strong>{opp.extraction_grade}</strong> — quality of the document
+                  analysis (A: all key fields found, D: nothing extractable).
+                </p>
+              ) : null}
               {opp.hard_gate_result ? (
                 <p className="muted">
                   Hard gates: {opp.hard_gate_result.passed ? "passed" : "failed"}

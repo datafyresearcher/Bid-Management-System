@@ -1,0 +1,24 @@
+# Keep the image small and reproducible.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.git/
+.gitignore
+
+# Runtime data and local artefacts
+bms.db
+bms.db.*
+*.bak
+*.sqlite3
+storage/
+exports/
+
+# Test-only code (the container runs the API, not the test suite)
+tests/
+
+# Not needed at runtime
+Dockerfile
+.dockerignore

@@ -86,6 +86,21 @@ runs the scheduled scan every hour (`BMS_SCAN_INTERVAL_SECONDS`).
 
 ### Option B — Local development
 
+**Port configuration first.** The API reads its settings from `.env` at the
+repository root *and* from `services/api/.env` (the local file wins). The web
+app reads `NEXT_PUBLIC_API_URL` from `apps/web/.env.local`. Both are already
+configured on this machine:
+
+| Service | URL | Where it is set |
+|---|---|---|
+| Web app | http://localhost:3001 | `apps/web/.env.local` → `NEXT_PUBLIC_API_URL` |
+| API + Swagger | http://localhost:8001/docs | `.env` → `BMS_CORS_ORIGINS` |
+
+Port 3001/8001 rather than 3000/8000 because another project on this machine
+already holds those two ports. If you move to a clean machine, change
+`NEXT_PUBLIC_API_URL` in `apps/web/.env.local` to `http://localhost:8000` and
+`BMS_CORS_ORIGINS` in `.env` to `http://localhost:3000`.
+
 Backend (Python 3.11+):
 
 ```bash
@@ -94,15 +109,21 @@ python -m venv .venv
 .venv\Scripts\activate            # Windows (source .venv/bin/activate on macOS/Linux)
 pip install -r requirements.txt
 python seed.py                    # demo users, sources, KB, initial scan + scoring
-uvicorn app.main:app --reload --port 8000
+.venv\Scripts\python.exe -m uvicorn app.main:app --port 8001
 ```
+
+> If you move the project folder, recreate the virtualenv — a Windows venv
+> records absolute paths in its console scripts, so `.venv\Scripts\uvicorn.exe`
+> keeps pointing at the old location. `.venv\Scripts\python.exe -m uvicorn`
+> still works, because the venv resolves its base interpreter from the system
+> Python.
 
 Frontend (Node 20+):
 
 ```bash
 cd apps/web
 npm install
-npm run dev                       # http://localhost:3000 (proxies API at localhost:8000)
+npm run dev -- --port 3001        # proxies API at the URL in .env.local
 ```
 
 ### Demo credentials
@@ -132,10 +153,59 @@ npm run dev                       # http://localhost:3000 (proxies API at localh
 
 ### LLM configuration
 
-Default `BMS_LLM_PROVIDER=mock` — deterministic extraction/summaries, no external calls; AI-quality
-metrics show "0 calls". To enable real LLM drafting set `BMS_LLM_PROVIDER=openrouter` (free tier)
-or `openai` plus the matching API key in `.env`, then restart the API. Prompt contracts and
-JSON-schema validation live in `services/api/app/llm/`.
+`BMS_LLM_PROVIDER` selects the backend:
+
+| Provider | What it does |
+|---|---|
+| `mock` (default) | A **deterministic engine** that performs the same four tasks the LLM performs — scoring rationale, requirement extraction, risk flagging, proposal drafting — with no API key and no network. It is a reproducible baseline you can diff a real model against, and every call it serves is recorded with `simulated=True` so simulated output is never confused with measured model behaviour. |
+| `openrouter` | Any OpenRouter model, via the OpenAI-compatible API. |
+| `openai` | Any OpenAI model. |
+
+Set the matching API key in `.env` and restart the API to switch:
+
+```bash
+BMS_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-...
+BMS_LLM_MODEL=openrouter/auto
+```
+
+Prompt contracts and JSON-schema validation live in `services/api/app/llm/`.
+The provider layer adds bounded retries with backoff, a response cache, strict
+schema validation of every structured response, prompt-injection fencing on
+all third-party document text, and parallel section drafting.
+
+**Safety property:** a missing-evidence marker found by the deterministic
+writer (`[[GAP: …]]`) is re-inserted if the model drops it. The model can
+rewrite a section; it cannot erase a known gap in your evidence.
+
+### Measuring accuracy
+
+The system ships with a labelled **gold set** — tender documents with
+human-confirmed field values — and an evaluation harness that runs the real
+pipeline over them and reports per-field precision, recall and F1.
+
+```bash
+cd services/api
+python evaluate.py                 # table
+python evaluate.py --json          # machine-readable
+python evaluate.py --min-case-accuracy 0.95   # CI gate
+```
+
+Or from the Admin screen: **Admin → Extraction accuracy (gold set) → Run
+evaluation**. The same run is available at `GET /api/admin/evaluation`.
+
+The current gold set is 7 cases covering a clean PPRA ITT, a table-formatted
+EPMS schedule, an NTDC notice with an ordinal date, a space-aligned WAPDA
+schedule, a bilingual Urdu/English notice, a consultancy tender with no bid
+security at all (the negative case that catches hallucinations), and a notice
+where the submission deadline and the bid opening date differ.
+
+**Be clear about what that number means.** The gold set is small and was
+written by the same team that wrote the extractor, so it is a *regression
+baseline* that protects against silent breakage — not a production accuracy
+claim. A real accuracy claim needs a gold set built from AHTE's own
+historical tender packages (assumption **A-01** in `docs/10`). The harness is
+built and waiting for that data.
 
 ### Tests
 
@@ -144,8 +214,20 @@ cd services/api
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-Covers the scorer, normalizer, document pipeline, leads API, and one **full end-to-end pipeline**
-test that drives a tender from discovery through every gate to a Won outcome over the HTTP API.
+Covers the scorer, normalizer, document pipeline, leads API, the **proposal
+drafting path**, one **full end-to-end pipeline** test that drives a tender
+from discovery through every gate to a Won outcome over the HTTP API, and the
+**gold-set accuracy regression test**.
+
+There is also a **live smoke test** that exercises the running system over
+HTTP — login, dashboard, all five gates, submission, outcome, AI quality and
+the gold set:
+
+```bash
+cd services/api
+.venv\Scripts\python.exe smoke_test.py      # needs the API running
+# BMS_BASE_URL=http://localhost:8017 .venv\Scripts\python.exe smoke_test.py
+```
 
 ## Key terminology
 
@@ -169,11 +251,14 @@ BID Management System/
 │   │   ├── config.py  db.py  models.py  security.py  serializers.py
 │   │   ├── routers/           ← auth, dashboard, opportunities, gates, leads, kb, sources, admin, proposals
 │   │   ├── services/          ← workflow (state machine + gates), scorer, extractor, risk,
-│   │   │                        documents, drafter, submission, leads, normalizer, jobs, audit…
+│   │   │                        documents, drafter, submission, leads, normalizer, jobs, audit,
+│   │   │                        risk_rules, evaluation, ai_quality…
 │   │   ├── connectors/        ← source adapters (PPRA Punjab, EPMS Federal, fixture JSON, email inbox)
-│   │   └── llm/               ← provider abstraction + prompts (mock / OpenRouter / OpenAI)
+│   │   └── llm/               ← provider abstraction + prompts + schemas + deterministic engine
+│   ├── goldset/               ← labelled tender documents + cases.json (accuracy ground truth)
+│   ├── evaluate.py            ← gold-set evaluation CLI
 │   ├── seed.py                ← idempotent demo seed (users, sources, KB, first scan)
-│   └── tests/                 ← pytest suite incl. end-to-end pipeline test
+│   └── tests/                 ← pytest suite incl. end-to-end pipeline + gold-set regression
 └── apps/web/                  ← Next.js 15 App Router frontend
     ├── app/                   ← login, dashboard, inbox, pipeline, bid room, review queue, leads, KB, admin
     ├── components/            ← Shell (auth guard + nav)

@@ -15,13 +15,26 @@ REPO_ROOT = _repo_root()
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="BMS_", extra="ignore")
+    # Load the repo-root .env (the one .env.example is copied to) and then the
+    # local one, so a file next to the code wins over the shared default.
+    # Both paths are needed because the API is started from services/api while
+    # .env.example lives at the repository root.
+    model_config = SettingsConfigDict(
+        env_file=(str(REPO_ROOT / ".env"), ".env"),
+        env_prefix="BMS_",
+        extra="ignore",
+    )
 
     database_url: str = "sqlite:///./bms.db"
     storage_dir: str = "./storage"
 
     llm_provider: str = "mock"
     llm_model: str = ""
+    llm_timeout_seconds: int = 60
+    llm_max_retries: int = 2
+    llm_temperature: float = 0.2
+    llm_cache_enabled: bool = True
+    llm_draft_workers: int = 4
     openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     openai_base_url: str = Field(default="https://api.openai.com/v1", validation_alias="OPENAI_BASE_URL")
@@ -31,6 +44,7 @@ class Settings(BaseSettings):
 
     fixtures: bool = True
     fixtures_path: str = Field(default="", validation_alias="BMS_FIXTURES_DIR")
+    seed_on_startup: bool = False
     scan_interval_seconds: int = 3600
     scheduler_enabled: bool = False
     cors_origins: str = "http://localhost:3000"

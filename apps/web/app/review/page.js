@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, DECISIONS, fmtDateTime, GATE_LABELS } from "../../lib/api";
+import { api, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
 
 export default function ReviewPage() {
   const [gates, setGates] = useState([]);
@@ -75,7 +75,9 @@ export default function ReviewPage() {
 
       {gates.length === 0 ? <p className="muted">No gates in this view.</p> : null}
 
-      {gates.map((g) => (
+      {gates.map((g) => {
+        const dl = deadlineInfo(g.opportunity?.submission_deadline);
+        return (
         <div className="card section-card" key={g.id}>
           <div className="section-title">
             <h3 style={{ textTransform: "none", fontSize: 14 }}>
@@ -85,9 +87,20 @@ export default function ReviewPage() {
             <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge"}>{g.status}</span>
           </div>
           <p className="muted">
-            Owner: {g.owner_role} · SLA {g.sla_hours}h · due {fmtDateTime(g.due_at)} ·{" "}
+            Owner: {g.owner_role} · Review SLA {g.sla_hours}h{" "}
+            <span className={slaIsOverdue(g.due_at) ? "score-low" : ""}>
+              ({slaCountdown(g.due_at)})
+            </span>{" "}
+            ·{" "}
             {g.opportunity ? <Link href={`/opportunities/${g.opportunity_id}`}>{g.opportunity.title.slice(0, 90)} ({g.opportunity.buyer_name})</Link> : `opportunity #${g.opportunity_id}`}
           </p>
+          {g.opportunity ? (
+            <p className={dl.urgent ? "score-low" : "muted"}>
+              <strong>Tender closes {dl.label}</strong>{" "}
+              {dl.days !== null ? `(${dl.countdown})` : ""}
+              {dl.urgent ? " — prioritise this gate" : ""}
+            </p>
+          ) : null}
 
           {["PENDING", "OVERDUE"].includes(g.status) ? (
             <>
@@ -119,7 +132,8 @@ export default function ReviewPage() {
             </p>
           )}
         </div>
-      ))}
+        );
+      })}
     </>
   );
 }

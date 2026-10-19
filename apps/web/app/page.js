@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, daysTo, fmtDate, fmtMoney, GATE_LABELS, severityClass, stateClass } from "../lib/api";
+import { api, deadlineInfo, fmtDate, fmtMoney, GATE_LABELS, severityClass, slaCountdown, slaIsOverdue, stateClass } from "../lib/api";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -19,9 +19,10 @@ export default function DashboardPage() {
   if (error) return <div className="notice err">{error}</div>;
   if (!data) return <p className="muted">Loading dashboard…</p>;
 
-  const activeCount = Object.entries(data.state_counts)
-    .filter(([s]) => !["WON", "LOST", "REJECTED", "ABANDONED"].includes(s))
-    .reduce((acc, [, n]) => acc + n, 0);
+  // Counts come from the server so the tiles and the pipeline always agree.
+  const activeCount = data.active_count ?? 0;
+  const screenedOutCount = data.screened_out_count ?? 0;
+  const submittedCount = data.submitted_count ?? 0;
 
   const markRead = async () => {
     await api("/api/dashboard/notifications/read", { method: "POST" });
@@ -44,11 +45,11 @@ export default function DashboardPage() {
         </div>
         <div className="card">
           <h3>Screened out</h3>
-          <div className="metric">{(data.state_counts.SCREENED_OUT || 0) + (data.state_counts.AUTO_ARCHIVED || 0)}</div>
+          <div className="metric">{screenedOutCount}</div>
         </div>
         <div className="card">
           <h3>Submitted / Evaluation</h3>
-          <div className="metric">{(data.state_counts.SUBMITTED || 0) + (data.state_counts.EVALUATION || 0)}</div>
+          <div className="metric">{submittedCount}</div>
         </div>
       </div>
 
@@ -66,13 +67,14 @@ export default function DashboardPage() {
                 <tr>
                   <th>Gate</th>
                   <th>Opportunity</th>
-                  <th>Due</th>
+                  <th>Tender closes</th>
+                  <th>Review SLA</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {data.pending_gates.map((g) => {
-                  const d = daysTo(g.due_at);
+                  const dl = deadlineInfo(g.opportunity?.submission_deadline);
                   return (
                     <tr key={g.id}>
                       <td><span className="badge badge-amber">{GATE_LABELS[g.gate] || `G${g.gate}`}</span></td>
@@ -82,7 +84,14 @@ export default function DashboardPage() {
                         </Link>
                         {g.opportunity ? <div className="muted">{g.opportunity.buyer_name}</div> : null}
                       </td>
-                      <td className={d !== null && d <= 0 ? "score-low" : ""}>{fmtDate(g.due_at)}{d !== null ? ` (${d}d)` : ""}</td>
+                      <td className={dl.className}>
+                        {dl.label}
+                        {dl.days !== null ? <div className="muted">{dl.countdown}</div> : null}
+                      </td>
+                      <td className={slaIsOverdue(g.due_at) ? "score-low" : "muted"}>
+                        {slaCountdown(g.due_at)}
+                        <div className="muted">internal</div>
+                      </td>
                       <td><Link className="btn small" href={`/opportunities/${g.opportunity_id}`}>Open</Link></td>
                     </tr>
                   );
@@ -205,12 +214,55 @@ export default function DashboardPage() {
         <div className="card">
           <h3>AI quality</h3>
           <div className="kv">
+            <dt>Provider</dt>
+            <dd>
+              {data.ai_quality.provider?.provider} · {data.ai_quality.provider?.model}
+              {data.ai_quality.provider?.simulated ? <span className="badge badge-gray">simulated</span> : null}
+            </dd>
             <dt>Scores recorded</dt><dd>{data.ai_quality.scores_total}</dd>
             <dt>Screening overrides</dt><dd>{data.ai_quality.screening_overrides} ({Math.round((data.ai_quality.override_rate || 0) * 100)}%)</dd>
             <dt>Gate approvals</dt><dd>{data.ai_quality.gate_approvals}</dd>
             <dt>Gate returns</dt><dd>{data.ai_quality.gate_returns}</dd>
             <dt>Approval rate</dt><dd>{Math.round((data.ai_quality.gate_approval_rate || 0) * 100)}%</dd>
+            <dt>Bids decided</dt><dd>{data.ai_quality.outcomes_total}</dd>
+            <dt>Win rate</dt>
+            <dd>
+              {data.ai_quality.outcomes_total
+                ? `${Math.round((data.ai_quality.win_rate || 0) * 100)}% (${data.ai_quality.outcomes_won} won / ${data.ai_quality.outcomes_lost} lost)`
+                : "no outcomes recorded yet"}
+            </dd>
+            <dt>Avg extraction confidence</dt>
+            <dd>
+              {data.ai_quality.avg_extraction_confidence !== null && data.ai_quality.avg_extraction_confidence !== undefined
+                ? `${Math.round(data.ai_quality.avg_extraction_confidence * 100)}%`
+                : "—"}
+            </dd>
+            <dt>Proposal sections with gaps</dt>
+            <dd>
+              {data.ai_quality.proposal_sections_with_gaps} of {data.ai_quality.proposal_sections_total}
+              {data.ai_quality.proposal_sections_total
+                ? ` (${Math.round((data.ai_quality.gap_rate || 0) * 100)}%)`
+                : ""}
+            </dd>
           </div>
+          {data.ai_quality.score_band_performance?.length ? (
+            <div className="mt-14">
+              <h4 className="muted" style={{ marginBottom: 6 }}>Does a higher score mean more wins?</h4>
+              <table>
+                <thead><tr><th>Score band</th><th>Decided</th><th>Won</th><th>Win rate</th></tr></thead>
+                <tbody>
+                  {data.ai_quality.score_band_performance.map((b) => (
+                    <tr key={b.band}>
+                      <td>{b.band}</td>
+                      <td>{b.decided}</td>
+                      <td>{b.wins}</td>
+                      <td>{b.decided ? `${Math.round(b.win_rate * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <div className="mt-14">
             <table>
               <thead>
@@ -226,7 +278,7 @@ export default function DashboardPage() {
                   </tr>
                 ))}
                 {Object.keys(data.ai_quality.llm_by_task || {}).length === 0 ? (
-                  <tr><td colSpan="4" className="muted">No LLM calls (deterministic mode).</td></tr>
+                  <tr><td colSpan="4" className="muted">No LLM calls yet.</td></tr>
                 ) : null}
               </tbody>
             </table>

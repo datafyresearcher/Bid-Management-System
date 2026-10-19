@@ -1,0 +1,28 @@
+{
+  "NTDC/CS/500kV/2026/07": [
+    {
+      "filename": "ITT_Mardan_500kV.txt",
+      "content": "Instructions to Bidders - 500kV GIS Substation Mardan Expansion (Ref: NTDC/CS/500kV/2026/07). Scope: Design, supply, installation, testing and commissioning of 500kV GIS substation expansion including 500kV bays, 2x750/1000 MVA autotransformers, protection and SCADA integration. Contract type: EPC/Turnkey under FIDIC Silver Book conditions of contract (1999 edition). Eligibility: PEC licence category C-A No Limit required. The bidder shall have average annual turnover of at least PKR 3,000,000,000 for the last three financial years, audited by a chartered accountant. The bidder must have successfully completed at least 3 similar nature works of 500kV substations or above. Joint ventures with foreign firms are permitted subject to PEC JV regulations and submission of the JV agreement. Bid security: PKR 90,000,000 in the form of an irrevocable bank guarantee from a scheduled bank, valid 28 days beyond bid validity. Submission deadline: 20-Nov-2026, 14:00 hours through EPMS e-procurement portal. Two envelope single stage procedure. Prices: firm and fixed; no price adjustment except variations under the contract. Advance payment: mobilization advance of 10 percent against bank guarantee is allowed; no other advance without guarantee. Liquidated damages: delay damages at 0.05 percent of contract price per day capped at 10 percent. Liability: the contractor's aggregate liability shall be without limitation for all losses arising from the works. Design responsibility: contractor shall carry out detailed design, geotechnical investigation, earthing and protection studies at its own cost and risk. Insurance: CAR and third party liability insurance to be maintained throughout the contract. Dispute resolution: disputes shall be referred to international arbitration under ICC rules with the seat of arbitration in Singapore."
+    },
+    {
+      "filename": "GCC_Mardan_500kV.txt",
+      "content": "General Conditions - FIDIC Silver Book (EPC/Turnkey) with Particular Conditions for NTDC Mardan 500kV expansion. Sub-Clause 4.12: Contractor takes responsibility for adverse physical conditions to the extent stated in the contract data. Sub-Clause 8.7: Delay damages as stated in the contract data. Sub-Clause 13.8: Adjustments for changes in laws and cost fluctuation are not applicable; the contract price is firm. Sub-Clause 17.6: Limitation of liability: no limitation of liability applies to the contractor's obligations. Sub-Clause 20.2: ICC arbitration, seat Singapore, language English. Particular Conditions modify Sub-Clause 14.2: 10 percent advance against an advance payment guarantee. Site access at Mardan grid station available on the commencement date stated in the contract data."
+    },
+    {
+      "filename": "Price_BOQ_Mardan.txt",
+      "content": "Priced schedule of rates and bill of quantities - 500kV GIS Mardan expansion. Section 1: GIS bay extension and busbar works. Section 2: Autotransformers 2x750/1000 MVA. Section 3: Protection, control and SCADA. Section 4: Civil works including GIS building extension. Section 5: Testing and commissioning, type tests. Bid security instrument details and performance security as per conditions."
+    }
+  ],
+  "NTDC/CS/220kV/2026/11": [
+    {
+      "filename": "ITT_OPGW_Jhelum.txt",
+      "content": "Instructions to Bidders - OPGW, hardware and stringing services for 220kV D/C line Jhelum-Mardan (Ref: NTDC/CS/220kV/2026/11). Scope: supply of OPGW and conductor hardware and stringing services for approximately 60 km of 220kV double circuit line. Eligibility: PEC licence C-B or above; bidders must have completed at least 2 similar nature works of 220kV transmission lines and stringing in the last ten years. Bid security: PKR 23,600,000 in the form of deposit at call or bank guarantee. Bid security form: bank guarantee preferred. Submission deadline: 12-Nov-2026 at 11:00 hours. Single stage one envelope. Liquidated damages for delay 0.05 percent per day capped at 10 percent. Price firm without adjustment. Two stage two envelope process is not applicable; single stage one envelope applies."
+    }
+  ],
+  "FED/PWD/2026/CS-88": [
+    {
+      "filename": "RFP_Corridor_Study.txt",
+      "content": "Request for Proposals - Feasibility study and detailed design of transmission corridor reinforcement (Ref: FED/PWD/2026/CS-88). Consulting services required for power system studies, route survey and detailed design. Evaluation on quality and cost based selection (QCBS). Bid security not applicable for consultancy services; proposal security of PKR 1,700,000 in the form of bank guarantee required. Submission deadline: 02-Nov-2026. Firms shall be registered with PEC in relevant category for consultancy. Two stage two envelope: technical and financial proposals."
+    }
+  ]
+}

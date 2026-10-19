@@ -10,7 +10,7 @@ from app.models import Opportunity, User
 from app.security import get_current_user, require_roles
 from app.serializers import opportunity_brief, opportunity_detail, outcome as outcome_serializer
 from app.services import audit, documents, scorer, submission, workflow
-from app.services.utils import detect_currency, parse_date, value_band
+from app.services.utils import detect_currency, parse_date, utcnow, value_band
 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
 
@@ -102,7 +102,7 @@ def get_opportunity(opp_id: int, user: User = Depends(get_current_user), db: Ses
 def create_manual(payload: ManualIn, user: User = Depends(require_roles("bid_manager", "proposal_engineer")), db: Session = Depends(get_db)):
     currency = payload.currency or detect_currency(f"{payload.title} {payload.description}")
     opp = Opportunity(
-        dedup_key=f"manual-{datetime.utcnow().timestamp()}",
+        dedup_key=f"manual-{utcnow().isoformat()}",
         country="PK",
         area=payload.area,
         city=payload.city,
@@ -120,7 +120,7 @@ def create_manual(payload: ManualIn, user: User = Depends(require_roles("bid_man
         opening_at=parse_date(payload.opening_at),
         source_kind="manual",
         state="NORMALIZED",
-        source_refs=[{"source_code": "manual", "native_id": f"manual-{datetime.utcnow().timestamp()}", "url": ""}],
+        source_refs=[{"source_code": "manual", "native_id": f"manual-{utcnow().isoformat()}", "url": ""}],
     )
     db.add(opp)
     db.commit()
@@ -166,6 +166,14 @@ def record_outcome(opp_id: int, payload: OutcomeIn, user: User = Depends(require
     result = payload.result.upper()
     if result not in ("WON", "LOST", "REJECTED"):
         raise HTTPException(status_code=400, detail="Result must be WON, LOST or REJECTED")
+    # An outcome can only exist for a bid that was actually submitted.
+    # Without this guard a bid could be marked WON straight from screening,
+    # which would silently poison the win-rate-by-score-band feedback loop.
+    if opp.state not in ("SUBMITTED", "EVALUATION", "WON", "LOST", "REJECTED"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bid is in state {opp.state} — an outcome can only be recorded after submission (SUBMITTED or EVALUATION).",
+        )
     outcome_row = submission.record_outcome(
         db,
         opp,

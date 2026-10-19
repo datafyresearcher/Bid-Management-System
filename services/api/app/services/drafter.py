@@ -1,5 +1,9 @@
+import re
+from concurrent.futures import ThreadPoolExecutor
+
 from sqlalchemy import select
 
+from app.config import settings
 from app.llm import provider as llm
 from app.llm import prompts
 from app.models import (
@@ -16,6 +20,7 @@ from app.models import (
     ProposalSection,
 )
 from app.services import audit
+from app.services.utils import sanitize_inline
 
 SECTION_SPECS = [
     ("cover_letter", "Cover Letter"),
@@ -30,6 +35,14 @@ SECTION_SPECS = [
 ]
 
 GAPS = []
+
+# The canonical missing-evidence marker. The deterministic writer, the LLM
+# prompt and the GAPS/DRAFTED status check all use this one token.
+GAP = prompts.GAP_MARKER
+
+
+def _gap(what: str) -> str:
+    return f"{GAP} {what}]"
 
 
 def _kb(db):
@@ -71,10 +84,10 @@ def _deterministic_sections(opp, kb, requirements, gaps):
         f"Subject: {opp.title}\n"
         f"Reference: {opp.buyer_ref or 'N/A'}\n\n"
         f"{company_name} is pleased to submit its proposal in response to the captioned tender. "
-        f"We confirm our PEC licence {license_row.category if license_row else '[GAP: PEC licence not in KB]'} "
+        f"We confirm our PEC licence {license_row.category if license_row else _gap('PEC licence not in KB')} "
         f"(No. {license_row.number if license_row else 'N/A'}) and our acceptance of the tender terms.\n\n"
-        f"Bid security of PKR {opp.bid_security_amount or '[GAP: bid security amount not extracted]'} "
-        f"is furnished as {opp.bid_security_form or '[GAP: bid security form not extracted]'}."
+        f"Bid security of PKR {opp.bid_security_amount if opp.bid_security_amount else _gap('bid security amount not extracted')} "
+        f"is furnished as {opp.bid_security_form if opp.bid_security_form else _gap('bid security form not extracted')}."
     )
     if company:
         citations.append({"type": "company", "ref": company.name})
@@ -91,13 +104,13 @@ def _deterministic_sections(opp, kb, requirements, gaps):
             f"Latest audited turnover: PKR {int(latest_fy.turnover):,} ({latest_fy.fiscal_year}) "
             f"per {latest_fy.auditor or 'auditor N/A'}."
             if latest_fy
-            else f"{company.legal_name or company.name} — {company.summary}\n[GAP: audited financials not in KB]"
+            else f"{company.legal_name or company.name} — {company.summary}\n{_gap('audited financials not in KB')}"
         )
         citations.append({"type": "company", "ref": "profile"})
         if latest_fy:
             citations.append({"type": "financial", "ref": latest_fy.fiscal_year})
     else:
-        sections["company_profile"] = "[GAP: company profile not loaded in KB]"
+        sections["company_profile"] = _gap("company profile not loaded in KB")
         gaps.append("company_profile")
 
     scope_reqs = [r.text for r in requirements if r.category in ("technical", "compliance")][:6]
@@ -124,7 +137,7 @@ def _deterministic_sections(opp, kb, requirements, gaps):
         sections["personnel"] = "Key personnel proposed:\n" + "\n".join(lines)
         citations.extend({"type": "personnel", "ref": p.name} for p in personnel[:5])
     else:
-        sections["personnel"] = "[GAP: no approved personnel in KB]"
+        sections["personnel"] = _gap("no approved personnel in KB")
         gaps.append("personnel")
 
     if equipment:
@@ -132,7 +145,7 @@ def _deterministic_sections(opp, kb, requirements, gaps):
         sections["equipment"] = "Plant & equipment available:\n" + "\n".join(lines)
         citations.extend({"type": "equipment", "ref": e.name} for e in equipment[:5])
     else:
-        sections["equipment"] = "[GAP: no approved equipment in KB]"
+        sections["equipment"] = _gap("no approved equipment in KB")
         gaps.append("equipment")
 
     if projects:
@@ -143,14 +156,14 @@ def _deterministic_sections(opp, kb, requirements, gaps):
         sections["past_performance"] = "Relevant completed contracts:\n" + "\n".join(lines)
         citations.extend({"type": "project", "ref": p.contract_no} for p in projects[:6])
     else:
-        sections["past_performance"] = "[GAP: no approved project experience in KB]"
+        sections["past_performance"] = _gap("no approved project experience in KB")
         gaps.append("past_performance")
 
     cert_lines = [f"- {c.name} ({c.issuer or 'issuer'}) {c.number or ''}" for c in certificates[:8]]
     matrix = [f"- [{r.category}] {r.text[:200]}" for r in requirements[:30]]
     sections["compliance_statement"] = (
         "Compliance commitments and certificates:\n"
-        + ("\n".join(cert_lines) if cert_lines else "[GAP: certificates not in KB]")
+        + ("\n".join(cert_lines) if cert_lines else _gap("certificates not in KB"))
         + "\n\nRequirements register (complied / noted):\n"
         + ("\n".join(matrix) if matrix else "- To be completed after document analysis")
     )
@@ -167,6 +180,11 @@ def _deterministic_sections(opp, kb, requirements, gaps):
     return sections, citations
 
 
+def _gap_markers(text: str):
+    """Every missing-evidence marker present in a section body."""
+    return re.findall(r"\[\[GAP:[^\]]*\]\]", text or "")
+
+
 def generate(db, opp):
     kb = _kb(db)
     requirements = _requirements(db, opp)
@@ -175,21 +193,53 @@ def generate(db, opp):
 
     provider = llm.get_provider()
     llm_used = False
+    llm_sections = 0
+
     if provider.enabled:
+        candidates = []
         for key, title in SECTION_SPECS:
             base = sections.get(key, "")
-            if not base or base.startswith("[GAP"):
+            # A section that is nothing but a gap marker has nothing to improve.
+            if not base or re.fullmatch(r"\s*\[\[GAP:[^\]]*\]\]\s*", base):
                 continue
-            prompt_input = (
-                f"Tender: {opp.title}\nBuyer: {opp.buyer_name}\nSection: {title}\n"
-                f"Grounding material:\n{base}\n\nRequirements context:\n"
-                + "\n".join(r.text[:200] for r in requirements[:12])
-            )
-            result = provider.chat(prompts.DRAFT_V1["system"], prompts.fence_untrusted(prompt_input), max_tokens=700)
-            llm.record_metric(db, "draft", result, opportunity_id=opp.id)
-            if result.valid and result.text.strip():
-                sections[key] = result.text.strip()
+            candidates.append((key, title, base))
+        if candidates:
+            workers = max(1, min(settings.llm_draft_workers, len(candidates)))
+            requirement_context = "\n".join(r.text[:200] for r in requirements[:12])
+
+            def _call(item):
+                key, title, base = item
+                prompt_input = (
+                    f"Tender: {sanitize_inline(opp.title, 200)}\n"
+                    f"Buyer: {sanitize_inline(opp.buyer_name, 120)}\n"
+                    f"Section: {title}\n"
+                    f"{prompts.fence_knowledge(base, 'GROUNDING MATERIAL')}\n\n"
+                    f"Requirements context:\n{prompts.fence_untrusted(requirement_context, 'REQUIREMENTS')}"
+                )
+                return key, provider.chat(
+                    prompts.DRAFT_V1["system"],
+                    prompt_input,
+                    max_tokens=700,
+                    task="draft",
+                )
+
+            # Network calls run concurrently; DB writes stay on this thread.
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(_call, candidates))
+
+            for key, result in results:
+                llm.record_metric(db, "draft", result, opportunity_id=opp.id)
+                if not (result.valid and result.text.strip()):
+                    continue
+                rewritten = result.text.strip()
+                # A known evidence gap is a fact about the company, not a
+                # writing problem. If the model dropped a marker, put it back.
+                for marker in _gap_markers(sections.get(key, "")):
+                    if marker not in rewritten:
+                        rewritten = f"{rewritten}\n\n{marker}"
+                sections[key] = rewritten
                 llm_used = True
+                llm_sections += 1
 
     proposal = db.execute(select(Proposal).where(Proposal.opportunity_id == opp.id)).scalars().first()
     if not proposal:
@@ -202,7 +252,7 @@ def generate(db, opp):
     stored = 0
     for index, (key, title) in enumerate(SECTION_SPECS):
         content = sections.get(key, "")
-        status = "GAPS" if "[[GAP" in content or "[GAP" in content else "DRAFTED"
+        status = "GAPS" if GAP in content else "DRAFTED"
         section = existing.get(key)
         if section:
             section.content = content
@@ -224,5 +274,10 @@ def generate(db, opp):
         stored += 1
     proposal.status = "DRAFT"
     db.commit()
-    audit.record(db, "proposal.generated", opportunity_id=opp.id, detail={"sections": stored, "gaps": gaps, "llm": llm_used})
-    return {"sections": stored, "gaps": gaps}
+    audit.record(
+        db,
+        "proposal.generated",
+        opportunity_id=opp.id,
+        detail={"sections": stored, "gaps": gaps, "llm": llm_used, "llm_sections": llm_sections},
+    )
+    return {"sections": stored, "gaps": gaps, "llm_sections": llm_sections}

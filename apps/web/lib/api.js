@@ -81,6 +81,69 @@ export function daysTo(value) {
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
+/**
+ * The real tender closing date, with a countdown and an urgency class.
+ *
+ * This is deliberately separate from the gate SLA. The SLA is an internal
+ * review deadline we set; the tender deadline is the date the buyer closes
+ * the bid. They are different clocks, and conflating them is how a bid
+ * manager misses a close date.
+ */
+export function deadlineInfo(deadline) {
+  if (!deadline) return { label: "—", days: null, countdown: "no date", className: "", urgent: false };
+  const d = new Date(deadline);
+  if (Number.isNaN(d.getTime())) return { label: "—", days: null, countdown: "no date", className: "", urgent: false };
+  const days = daysTo(deadline);
+  let className = "";
+  let urgent = false;
+  if (days < 0) {
+    className = "score-low";
+    urgent = true;
+  } else if (days <= 7) {
+    className = "score-low";
+    urgent = true;
+  } else if (days <= 21) {
+    className = "score-mid";
+  }
+  return {
+    label: fmtDate(deadline),
+    days,
+    countdown: days < 0 ? "closed" : `${days}d left`,
+    className,
+    urgent,
+  };
+}
+
+/**
+ * The review SLA countdown.
+ *
+ * Gate SLAs are measured in hours, so a day-granularity counter is not
+ * enough: a gate 15 hours overdue is not "0d left". Anything inside 24 hours
+ * is reported in hours, and anything past its due time is reported as
+ * overdue rather than as a zero.
+ */
+export function slaCountdown(dueAt) {
+  if (!dueAt) return "—";
+  const due = new Date(dueAt);
+  if (Number.isNaN(due.getTime())) return "—";
+  const ms = due.getTime() - Date.now();
+  const hours = Math.ceil(ms / (1000 * 60 * 60));
+  if (hours < 0) {
+    const overdue = Math.abs(hours);
+    return overdue < 24 ? `${overdue}h overdue` : `${Math.ceil(overdue / 24)}d overdue`;
+  }
+  if (hours < 24) return `${hours}h left`;
+  return `${Math.ceil(hours / 24)}d left`;
+}
+
+/** True when a review SLA has already expired. */
+export function slaIsOverdue(dueAt) {
+  if (!dueAt) return false;
+  const due = new Date(dueAt);
+  if (Number.isNaN(due.getTime())) return false;
+  return due.getTime() < Date.now();
+}
+
 export const GATE_LABELS = {
   1: "G1 Go/No-Go",
   2: "G2 Eligibility",
