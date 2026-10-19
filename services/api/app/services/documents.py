@@ -106,7 +106,12 @@ def fetch_for_opportunity(db, opp) -> int:
     fetched = 0
     refs = list(opp.source_refs or [])
     for ref in refs:
-        source = db.get(Source, ref.get("source_id"))
+        source_id = ref.get("source_id")
+        if not source_id:
+            # A converted lead can carry a source reference with no source id.
+            # db.get() with a None key is a warning today and an error later.
+            continue
+        source = db.get(Source, source_id)
         if not source:
             continue
         connector = get_connector(source)

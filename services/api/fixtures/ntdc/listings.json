@@ -1,0 +1,34 @@
+{
+  "notices": [
+    {
+      "native_id": "NTDC-PROC-2026-441",
+      "url": "https://ntdc.gov.pk/tenders/441",
+      "title": "Supply of lattice towers, steel structures and hardware for 220kV D/C transmission line (Lot-2)",
+      "buyer_name": "National Transmission & Despatch Company (NTDC)",
+      "buyer_ref": "NTDC-PROC-2026-441",
+      "source_category": "Goods",
+      "city": "Lahore",
+      "area": "Federal",
+      "estimated_value": 640000000,
+      "published_at": "2026-10-08",
+      "submission_deadline": "2026-11-10",
+      "opening_at": "2026-11-11",
+      "description": "Supply of galvanized lattice towers, steel structures, insulator strings and conductor hardware for 220kV double circuit transmission line Lot-2. Inspection at factory before dispatch."
+    },
+    {
+      "native_id": "NTDC-PROC-2026-455",
+      "url": "https://ntdc.gov.pk/tenders/455",
+      "title": "Rehabilitation and augmentation of 132kV substations at Sahiwal and Okara including transformer replacement",
+      "buyer_name": "National Transmission & Despatch Company (NTDC)",
+      "buyer_ref": "NTDC-PROC-2026-455",
+      "source_category": "Works",
+      "city": "Sahiwal",
+      "area": "Punjab",
+      "estimated_value": 1720000000,
+      "published_at": "2026-10-13",
+      "submission_deadline": "2026-11-25",
+      "opening_at": "2026-11-26",
+      "description": "Rehabilitation and augmentation works at 132kV substations Sahiwal and Okara: replacement of power transformers, refurbishment of protection panels, earthing improvement and civil repair works."
+    }
+  ]
+}

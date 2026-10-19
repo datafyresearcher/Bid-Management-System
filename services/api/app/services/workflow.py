@@ -13,6 +13,7 @@ from app.models import (
     WorkflowEvent,
 )
 from app.services import audit, notifications
+from app.services.utils import utcnow
 
 APPROVE_DECISIONS = {"GO", "CONFIRMED", "APPROVED", "SUBMITTED", "YES"}
 REJECT_DECISIONS = {"NO_GO", "NOT_CONFIRMED", "RETURNED", "NO", "BLOCKED"}
@@ -64,7 +65,7 @@ def open_gate(db, opp, gate, title, owner_role=None, sla_hours=None, inputs=None
         owner_role=owner_role,
         owner_user_id=owner.id if owner else None,
         sla_hours=sla_hours,
-        due_at=datetime.utcnow() + timedelta(hours=sla_hours),
+        due_at=utcnow() + timedelta(hours=sla_hours),
         inputs_snapshot=inputs or {},
     )
     db.add(task)
@@ -88,7 +89,7 @@ def decide_gate(db, task, decision, actor=None, comment="", reason_code=""):
     task.comment = comment or ""
     task.reason_code = reason_code or ""
     task.decided_by = actor.id if actor else None
-    task.decided_at = datetime.utcnow()
+    task.decided_at = utcnow()
     task.status = "APPROVED" if decision in APPROVE_DECISIONS else "REJECTED"
     db.commit()
 
@@ -363,7 +364,7 @@ def _eligibility(db, opp):
 
     deadline_ok = True
     if opp.submission_deadline:
-        days_left = (opp.submission_deadline - datetime.utcnow()).days
+        days_left = (opp.submission_deadline - utcnow()).days
         if days_left < 0:
             deadline_ok = False
             notes.append("Deadline has passed")

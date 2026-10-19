@@ -5,10 +5,17 @@ import { api, clearSession, fmtDateTime, getToken } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function pct(value) {
+  if (value === null || value === undefined) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
 export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [quality, setQuality] = useState(null);
+  const [evaluation, setEvaluation] = useState(null);
+  const [evalBusy, setEvalBusy] = useState(false);
   const [audit, setAudit] = useState([]);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -26,6 +33,19 @@ export default function AdminPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const runEvaluation = async () => {
+    setEvalBusy(true);
+    setError("");
+    try {
+      const result = await api("/api/admin/evaluation");
+      setEvaluation(result);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEvalBusy(false);
+    }
+  };
 
   const act = async (fn, message) => {
     setBusy(true);
@@ -159,17 +179,110 @@ export default function AdminPage() {
           {quality ? (
             <>
               <div className="kv">
+                <dt>Provider</dt>
+                <dd>
+                  {quality.provider?.provider} · {quality.provider?.model}
+                  {quality.provider?.simulated ? <span className="badge badge-gray">simulated</span> : null}
+                  {quality.provider?.enabled ? null : <span className="badge badge-red">not configured</span>}
+                </dd>
                 <dt>LLM calls by task</dt>
                 <dd>
-                  {Object.entries(quality.llm_by_task || {}).map(([task, m]) => `${task}: ${m.calls} (invalid ${m.invalid})`).join(" · ") || "none (deterministic mode)"}
+                  {Object.entries(quality.llm_by_task || {}).map(([task, m]) => `${task}: ${m.calls} (invalid ${m.invalid})`).join(" · ") || "no calls recorded yet"}
                 </dd>
                 <dt>Scoring overrides</dt><dd>{quality.screening_overrides} of {quality.scores_total} scores ({Math.round((quality.override_rate || 0) * 100)}%)</dd>
                 <dt>Gate approvals / returns</dt><dd>{quality.gate_approvals} / {quality.gate_returns}</dd>
                 <dt>Human approval rate</dt><dd>{Math.round((quality.gate_approval_rate || 0) * 100)}%</dd>
+                <dt>Bids decided</dt><dd>{quality.outcomes_total}</dd>
+                <dt>Win rate</dt>
+                <dd>
+                  {quality.outcomes_total
+                    ? `${Math.round((quality.win_rate || 0) * 100)}% (${quality.outcomes_won} won / ${quality.outcomes_lost} lost)`
+                    : "no outcomes recorded yet"}
+                </dd>
+                <dt>Avg score — won vs lost</dt>
+                <dd>
+                  {quality.calibration?.avg_score_won !== null && quality.calibration?.avg_score_won !== undefined
+                    ? `${quality.calibration.avg_score_won} vs ${quality.calibration.avg_score_lost ?? "n/a"}`
+                    : "not enough outcomes yet"}
+                </dd>
+                <dt>Extraction grades</dt>
+                <dd>
+                  {Object.entries(quality.extraction_grades || {}).map(([g, n]) => `${g}: ${n}`).join(" · ") || "—"}
+                </dd>
+                <dt>Proposal sections with gaps</dt>
+                <dd>{quality.proposal_sections_with_gaps} of {quality.proposal_sections_total}</dd>
               </div>
+              {quality.score_band_performance?.length ? (
+                <div className="mt-14">
+                  <h4 className="muted" style={{ marginBottom: 6 }}>Score band vs outcome</h4>
+                  <table>
+                    <thead><tr><th>Band</th><th>Decided</th><th>Won</th><th>Win rate</th></tr></thead>
+                    <tbody>
+                      {quality.score_band_performance.map((b) => (
+                        <tr key={b.band}>
+                          <td>{b.band}</td>
+                          <td>{b.decided}</td>
+                          <td>{b.wins}</td>
+                          <td>{b.decided ? `${Math.round(b.win_rate * 100)}%` : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              {quality.loss_reasons?.length ? (
+                <div className="mt-14">
+                  <h4 className="muted" style={{ marginBottom: 6 }}>Why bids were lost</h4>
+                  <ul className="muted" style={{ fontSize: 13 }}>
+                    {quality.loss_reasons.map((r) => <li key={r.reason}>{r.reason} — {r.count}</li>)}
+                  </ul>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="muted">Not available.</p>
+          )}
+        </div>
+        <div className="card">
+          <h3>
+            Extraction accuracy (gold set){" "}
+            <button className="btn small" onClick={runEvaluation} disabled={evalBusy}>
+              {evalBusy ? "Running…" : "Run evaluation"}
+            </button>
+          </h3>
+          {evaluation ? (
+            <>
+              <div className="kv">
+                <dt>Cases passed</dt>
+                <dd>{evaluation.cases_passed} / {evaluation.cases_total}</dd>
+                <dt>Case accuracy</dt><dd>{pct(evaluation.case_accuracy)}</dd>
+                <dt>Micro accuracy (all fields)</dt><dd>{pct(evaluation.micro_accuracy)}</dd>
+                <dt>Macro F1</dt><dd>{pct(evaluation.macro_f1)}</dd>
+                <dt>Risk-flag recall</dt><dd>{pct(evaluation.risk_recall)}</dd>
+              </div>
+              <div className="table-wrap mt-14" style={{ maxHeight: 280, overflowY: "auto" }}>
+                <table>
+                  <thead><tr><th>Field</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead>
+                  <tbody>
+                    {Object.entries(evaluation.fields || {}).map(([field, d]) => (
+                      <tr key={field}>
+                        <td>{field}</td>
+                        <td>{pct(d.precision)}</td>
+                        <td>{pct(d.recall)}</td>
+                        <td>{pct(d.f1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted mt-14" style={{ fontSize: 12 }}>
+                Runs against a throwaway database, so it never touches live data. The gold set is a
+                regression baseline — a production accuracy claim needs a gold set built from AHTE&apos;s
+                own historical tender packages.
+              </p>
+            </>
+          ) : (
+            <p className="muted">Run the evaluation to measure extraction accuracy against the labelled gold set.</p>
           )}
         </div>
         <div className="card">

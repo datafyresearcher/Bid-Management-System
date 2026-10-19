@@ -1,0 +1,171 @@
+{
+  "version": "goldset-v1",
+  "description": "Labelled tender documents with the field values a human reviewer confirmed. Every expected value here was read off the source document by hand; nothing was copied from the extractor's output.",
+  "cases": [
+    {
+      "id": "ppra_gss_132kv_itt",
+      "name": "PPRA Punjab — 132kV Grid Station, Sundar Industrial Estate",
+      "source": "PPRA Punjab",
+      "document": "documents/ppra_gss_132kv_itt.txt",
+      "notes": "Baseline PPRA ITT. Standard date format, prose-style clauses.",
+      "expected": {
+        "submission_deadline": "2026-11-25",
+        "bid_security_amount": 5000000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 25000,
+        "pec_category_required": "C-A",
+        "prequal_required": false,
+        "procurement_regime": null,
+        "qualification_thresholds": { "turnover": 2500000000, "similar_work_count": 3 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Advance payment", "Foreign arbitration",
+        "Termination for convenience", "No price adjustment"
+      ],
+      "risk_flags_min": 4,
+      "risk_flags_max": 14,
+      "min_requirements": 10
+    },
+    {
+      "id": "epms_220kv_gis",
+      "name": "EPMS Federal — 220kV GIS Substation and 66kV Feeder Bays",
+      "source": "EPMS Federal",
+      "document": "documents/epms_220kv_gis.txt",
+      "notes": "Table-formatted commercial schedule, slash-suffixed amounts, scale-word turnover, Two Envelope regime.",
+      "expected": {
+        "submission_deadline": "2026-11-25",
+        "bid_security_amount": 12500000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 45000,
+        "pec_category_required": "C-A",
+        "prequal_required": true,
+        "procurement_regime": "two-stage-two-envelope",
+        "qualification_thresholds": { "turnover": 5000000000, "similar_work_count": 5 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Advance payment", "Foreign arbitration",
+        "Termination for convenience", "No price adjustment", "Design"
+      ],
+      "risk_flags_min": 5,
+      "risk_flags_max": 14,
+      "min_requirements": 12
+    },
+    {
+      "id": "ntdc_opgw_stringing",
+      "name": "NTDC — 220kV OPGW, hardware and stringing",
+      "source": "NTDC",
+      "document": "documents/ntdc_opgw_stringing.txt",
+      "notes": "Ordinal date (25th November 2026). Bid security given as a percentage with an absolute fallback.",
+      "expected": {
+        "submission_deadline": "2026-11-25",
+        "bid_security_amount": 4000000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 15000,
+        "pec_category_required": "C-A",
+        "prequal_required": false,
+        "procurement_regime": null,
+        "qualification_thresholds": { "turnover": 1800000000, "similar_work_count": 4 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Foreign arbitration",
+        "Termination for convenience", "No price adjustment"
+      ],
+      "risk_flags_min": 5,
+      "risk_flags_max": 14,
+      "min_requirements": 10
+    },
+    {
+      "id": "wapda_om_support",
+      "name": "WAPDA — 220kV O&M support services",
+      "source": "WAPDA",
+      "document": "documents/wapda_om_support.txt",
+      "notes": "Space-aligned schedule of requirements, comma in long-form date (30 November, 2026).",
+      "expected": {
+        "submission_deadline": "2026-11-30",
+        "bid_security_amount": 3200000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 12000,
+        "pec_category_required": "C-A",
+        "prequal_required": false,
+        "procurement_regime": null,
+        "qualification_thresholds": { "turnover": 900000000, "similar_work_count": 2 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Advance payment", "Foreign arbitration",
+        "Termination for convenience", "No price adjustment"
+      ],
+      "risk_flags_min": 5,
+      "risk_flags_max": 14,
+      "min_requirements": 10
+    },
+    {
+      "id": "ppra_bilingual_lesco_cable",
+      "name": "PPRA Punjab (bilingual) — 11kV XLPE cables, GEPCO",
+      "source": "PPRA Punjab",
+      "document": "documents/ppra_bilingual_lesco_cable.txt",
+      "notes": "Urdu/English mix, Urdu month name in the deadline, and a decoy fee figure in the Urdu paragraph that must not be extracted.",
+      "expected": {
+        "submission_deadline": "2026-11-25",
+        "bid_security_amount": 1500000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 8000,
+        "pec_category_required": "C-B",
+        "prequal_required": true,
+        "procurement_regime": null,
+        "qualification_thresholds": { "turnover": 600000000, "similar_work_count": 2 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Foreign arbitration", "Termination for convenience",
+        "No price adjustment"
+      ],
+      "risk_flags_min": 4,
+      "risk_flags_max": 14,
+      "min_requirements": 8
+    },
+    {
+      "id": "fedconsult_feasibility",
+      "name": "Ministry of Energy — renewable feasibility consultancy (negative case)",
+      "source": "Federal",
+      "document": "documents/fedconsult_feasibility.txt",
+      "notes": "No bid security, no tender fee, no PEC requirement and no turnover. Any value extracted for these fields is a hallucination.",
+      "expected": {
+        "submission_deadline": "2026-12-12",
+        "bid_security_amount": null,
+        "bid_security_form": null,
+        "tender_fee": null,
+        "pec_category_required": null,
+        "prequal_required": false,
+        "procurement_regime": "two-stage-two-envelope",
+        "qualification_thresholds": { "turnover": null, "similar_work_count": 5 }
+      },
+      "risk_titles_containing": [],
+      "risk_flags_min": 0,
+      "risk_flags_max": 5,
+      "min_requirements": 4
+    },
+    {
+      "id": "hesco_rehab_substations",
+      "name": "HESCO — rehabilitation of 132kV substations (submission vs opening date)",
+      "source": "HESCO",
+      "document": "documents/hesco_rehab_substations.txt",
+      "notes": "Submission deadline (20-11-2026) and bid opening date (25-11-2026) differ. Only the submission deadline may be extracted.",
+      "expected": {
+        "submission_deadline": "2026-11-20",
+        "bid_security_amount": 2750000,
+        "bid_security_form": "Bank Guarantee",
+        "tender_fee": 10000,
+        "pec_category_required": "C-A",
+        "prequal_required": false,
+        "procurement_regime": null,
+        "qualification_thresholds": { "turnover": 750000000, "similar_work_count": 3 }
+      },
+      "risk_titles_containing": [
+        "Uncapped", "Delay damages", "Advance payment", "Foreign arbitration",
+        "Termination for convenience", "No price adjustment"
+      ],
+      "risk_flags_min": 5,
+      "risk_flags_max": 14,
+      "min_requirements": 10
+    }
+  ]
+}

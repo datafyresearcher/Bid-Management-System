@@ -4,16 +4,23 @@ from sqlalchemy import select
 
 from app.config import storage_path
 from app.models import (
+    CompanyCertificate,
     CompanyProfile,
     ComplianceItem,
     Document,
+    EquipmentItem,
+    FinancialYear,
+    LibraryDocument,
     License,
     Opportunity,
     Outcome,
+    Personnel,
+    ProjectExperience,
     Proposal,
     SubmissionRecord,
 )
 from app.services import audit, notifications
+from app.services.utils import utcnow
 
 
 def _record(db, opp) -> SubmissionRecord:
@@ -173,7 +180,7 @@ def mark_submitted(db, opp, actor=None, comment=""):
 
     sr = _record(db, opp)
     sr.status = "SUBMITTED"
-    sr.submitted_at = datetime.utcnow()
+    sr.submitted_at = utcnow()
     if comment:
         sr.portal_note = (sr.portal_note + "\n" + comment).strip()
     db.commit()
@@ -220,11 +227,32 @@ def record_outcome(db, opp, result, reason_code="", comment="", competitor_note=
 
 
 def kb_gaps_summary(db):
-    company = db.execute(select(CompanyProfile)).scalars().first()
-    license_row = db.execute(select(License).where(License.approved == True)).scalars().first()  # noqa: E712
+    """Report which company evidence is missing or not yet approved.
+
+    This is the actionable half of the knowledge-base story: each gap names
+    the artefact class, whether anything exists, and whether it is approved,
+    so the bid team knows exactly what to load before the next deadline.
+    """
+    checks = [
+        ("company profile", CompanyProfile, None),
+        ("PEC licence", License, License.approved == True),  # noqa: E712
+        ("audited financials", FinancialYear, FinancialYear.approved == True),  # noqa: E712
+        ("project experience", ProjectExperience, ProjectExperience.approved == True),  # noqa: E712
+        ("key personnel", Personnel, Personnel.approved == True),  # noqa: E712
+        ("plant & equipment", EquipmentItem, EquipmentItem.approved == True),  # noqa: E712
+        ("certificates", CompanyCertificate, CompanyCertificate.approved == True),  # noqa: E712
+        ("library / templates", LibraryDocument, LibraryDocument.approved == True),  # noqa: E712
+    ]
+
     gaps = []
-    if not company:
-        gaps.append("company profile")
-    if not license_row:
-        gaps.append("approved PEC licence")
-    return gaps
+    present = []
+    for label, model, approved_filter in checks:
+        query = select(model)
+        if approved_filter is not None:
+            query = query.where(approved_filter)
+        count = db.execute(query).scalars().all()
+        if count:
+            present.append({"item": label, "count": len(count)})
+        else:
+            gaps.append(label)
+    return gaps, present

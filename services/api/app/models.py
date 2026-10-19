@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -18,7 +18,8 @@ from app.db import Base
 
 
 def now():
-    return datetime.utcnow()
+    """Naive UTC timestamp used as the default for every datetime column."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(Base):
@@ -115,6 +116,8 @@ class Opportunity(Base):
     score_total = Column(Float)
     hard_gate_result = Column(JSON)
     ai_rationale = Column(Text, default="")
+    ai_confidence = Column(Float)
+    extraction_grade = Column(String(20), default="")
     documents_status = Column(String(40), default="none")
     submission_mode = Column(String(40), default="assisted")
     abandoned_reason = Column(String(200), default="")
@@ -277,6 +280,10 @@ class AIMetric(Base):
     output_valid = Column(Boolean, default=True)
     human_override = Column(Boolean, default=False)
     correction_count = Column(Integer, default=0)
+    simulated = Column(Boolean, default=False)
+    cached = Column(Boolean, default=False)
+    error = Column(String(200), default="")
+    attempts = Column(Integer, default=1)
     created_at = Column(DateTime, default=now)
 
 

@@ -1,0 +1,80 @@
+{
+  "source": "Annual Procurement Plans FY2026-27 (harvested)",
+  "leads": [
+    {
+      "source_code": "L2",
+      "source_label": "Annual Procurement Plan FY2026-27",
+      "buyer": "National Transmission & Despatch Company (NTDC)",
+      "title": "500kV substation extension programme - two new GIS substations (Lahore and Faisalabad)",
+      "description": "Annual plan lists construction of two new 500kV GIS substations with associated 500kV bays, expected tendering in Q3 FY2026-27 under FIDIC Silver Book.",
+      "category_internal": "Substations",
+      "area": "Punjab",
+      "expected_window": "Q3 FY2026-27",
+      "estimated_value": 9800000000,
+      "confidence_tier": "High",
+      "confidence_note": "Included in published annual procurement plan.",
+      "status": "Tracking",
+      "evidence": {"plan_ref": "APP-NTDC-2026-27-Item-12"}
+    },
+    {
+      "source_code": "L2",
+      "source_label": "Annual Procurement Plan FY2026-27",
+      "buyer": "National Transmission & Despatch Company (NTDC)",
+      "title": "220kV transmission line packages - Lot-1 and Lot-2 (Mardan-Jhelum corridor)",
+      "description": "Two 220kV double circuit transmission line packages planned with tower supply, erection and stringing; expected publication Nov-Dec 2026.",
+      "category_internal": "Transmission Lines",
+      "area": "Khyber Pakhtunkhwa",
+      "expected_window": "Q2 FY2026-27",
+      "estimated_value": 7200000000,
+      "confidence_tier": "High",
+      "confidence_note": "Corridor studies completed; PC-I approved.",
+      "status": "Tracking",
+      "evidence": {"plan_ref": "APP-NTDC-2026-27-Item-23"}
+    },
+    {
+      "source_code": "L2",
+      "source_label": "Annual Procurement Plan FY2026-27",
+      "buyer": "Lahore Electric Supply Company (LESCO)",
+      "title": "132kV grid station rehabilitation batch-3 (six existing grid stations)",
+      "description": "Rehabilitation of six 132kV grid stations including transformer replacement, protection upgrades and civil works.",
+      "category_internal": "Substations",
+      "area": "Punjab",
+      "expected_window": "Q3 FY2026-27",
+      "estimated_value": 2400000000,
+      "confidence_tier": "Medium",
+      "confidence_note": "Plan published; board approval pending.",
+      "status": "Signal",
+      "evidence": {"plan_ref": "APP-LESCO-2026-27-Item-07"}
+    },
+    {
+      "source_code": "L2",
+      "source_label": "Annual Procurement Plan FY2026-27",
+      "buyer": "WAPDA (Water and Power Development Authority)",
+      "title": "Switchyard refurbishment services - Mangla and Tarbela complexes",
+      "description": "O&M and refurbishment services for 220kV switchyards at hydel complexes; multi-year service contracts planned.",
+      "category_internal": "Services",
+      "area": "Federal",
+      "expected_window": "Q2 FY2026-27",
+      "estimated_value": 900000000,
+      "confidence_tier": "Medium",
+      "confidence_note": "Repeated in previous plans; timing indicative.",
+      "status": "Signal",
+      "evidence": {"plan_ref": "APP-WAPDA-2026-27-Item-31"}
+    },
+    {
+      "source_code": "L2",
+      "source_label": "Annual Procurement Plan FY2026-27",
+      "buyer": "Quetta Electric Supply Company (QESCO)",
+      "title": "220kV grid station and line works under PSDP allocation",
+      "description": "PSDP-funded 220kV grid station with associated transmission line works in Balochistan; tendering expected Q4 FY2026-27.",
+      "category_internal": "Substations",
+      "area": "Balochistan",
+      "expected_window": "Q4 FY2026-27",
+      "estimated_value": 5600000000,
+      "confidence_tier": "Low",
+      "confidence_note": "PSDP allocation confirmed in budget documents; execution timeline uncertain.",
+      "status": "Signal",
+      "evidence": {"plan_ref": "APP-QESCO-2026-27-Item-02"}
+    }
+  ]
+}

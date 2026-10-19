@@ -145,6 +145,15 @@ def kb_summary(user: User = Depends(get_current_user), db: Session = Depends(get
     }
 
 
+@router.get("/gaps")
+def kb_gaps(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Which company evidence is missing or not yet approved."""
+    from app.services import submission
+
+    gaps, present = submission.kb_gaps_summary(db)
+    return {"gaps": gaps, "present": present, "complete": not gaps}
+
+
 @router.get("/company")
 def get_company(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = db.execute(select(CompanyProfile)).scalars().first()

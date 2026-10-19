@@ -1,0 +1,50 @@
+{
+  "notices": [
+    {
+      "native_id": "NTDC/CS/500kV/2026/07",
+      "url": "https://epms.gov.pk/notice/NTDC-CS-500kV-2026-07",
+      "title": "Design, Supply, Installation, Testing and Commissioning of 500kV GIS Substation expansion at Mardan including associated 500kV bay extensions",
+      "buyer_name": "National Transmission & Despatch Company (NTDC)",
+      "buyer_ref": "NTDC/CS/500kV/2026/07",
+      "source_category": "Works/Electrical",
+      "city": "Mardan",
+      "area": "Federal",
+      "estimated_value": 4500000000,
+      "published_at": "2026-10-05",
+      "clarification_deadline": "2026-11-05",
+      "submission_deadline": "2026-11-20",
+      "opening_at": "2026-11-21",
+      "description": "EPC/turnkey contract for the design, supply, installation, testing and commissioning of 500kV GIS substation expansion at Mardan with associated 500kV bay extensions. Contract under FIDIC Silver Book conditions. Single stage two envelope bidding on the EPMS portal."
+    },
+    {
+      "native_id": "NTDC/CS/220kV/2026/11",
+      "url": "https://epms.gov.pk/notice/NTDC-CS-220kV-2026-11",
+      "title": "Procurement of OPGW, hardware and stringing of 220kV D/C transmission line section Jhelum-Mardan",
+      "buyer_name": "National Transmission & Despatch Company (NTDC)",
+      "buyer_ref": "NTDC/CS/220kV/2026/11",
+      "source_category": "Goods",
+      "city": "Jhelum",
+      "area": "Federal",
+      "estimated_value": 1180000000,
+      "published_at": "2026-10-09",
+      "submission_deadline": "2026-11-12",
+      "opening_at": "2026-11-13",
+      "description": "Supply of OPGW, conductor hardware and stringing equipment services for 220kV double circuit transmission line section between Jhelum and Mardan. Single stage one envelope."
+    },
+    {
+      "native_id": "FED/PWD/2026/CS-88",
+      "url": "https://epms.gov.pk/notice/FED-PWD-2026-CS-88",
+      "title": "Hiring of consultancy services for feasibility study and detailed design of transmission corridor reinforcement",
+      "buyer_name": "Ministry of Energy (Power Division) - Federal",
+      "buyer_ref": "FED/PWD/2026/CS-88",
+      "source_category": "Services",
+      "city": "Islamabad",
+      "area": "Federal",
+      "estimated_value": 85000000,
+      "published_at": "2026-10-11",
+      "submission_deadline": "2026-11-02",
+      "opening_at": "2026-11-02",
+      "description": "Request for proposals for consultancy services: feasibility study and detailed design of transmission corridor reinforcement between existing 500kV corridors. Two stage two envelope process."
+    }
+  ]
+}

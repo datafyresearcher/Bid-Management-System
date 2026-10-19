@@ -1,0 +1,8 @@
+Subject: Planned 220kV D/C transmission line package (Punjab) FY2026-27
+From: planning.desk@ntdc.example
+Window: Q2 FY2026-27 (Nov 2026 - Jan 2027)
+Value: 4,200,000,000
+Category: Transmission Lines
+Area: Punjab
+Confidence: High
+Body: PC-I approved for 220kV double circuit transmission line package with associated 220kV bay works. Expected publication on EPMS by late November 2026. Scope includes tower supply, erection and stringing for approximately 95 km. Likely split into two lots: line works and substation bays.

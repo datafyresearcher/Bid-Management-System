@@ -2,7 +2,7 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -116,6 +116,29 @@ def delete_mapping(mapping_id: int, user: User = Depends(ADMIN), db: Session = D
 @router.get("/ai-quality")
 def ai_quality_summary(user: User = Depends(ADMIN), db: Session = Depends(get_db)):
     return ai_quality.summary(db)
+
+
+@router.get("/evaluation")
+def run_evaluation(user: User = Depends(ADMIN)):
+    """Run the gold-set evaluation and return per-field accuracy.
+
+    Runs against a throwaway database, so it never touches operational data.
+    """
+    from app.services import evaluation
+
+    report = evaluation.run_all()
+    # The per-case detail is verbose; the summary is what the panel needs.
+    report.pop("cases", None)
+    return report
+
+
+@router.get("/evaluation/report")
+def evaluation_report(user: User = Depends(ADMIN)):
+    """The same evaluation, rendered as a plain-text report."""
+    from app.services import evaluation
+
+    report = evaluation.run_all()
+    return PlainTextResponse(evaluation.format_report(report))
 
 
 @router.get("/audit")

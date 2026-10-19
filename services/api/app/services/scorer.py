@@ -5,9 +5,9 @@ from sqlalchemy import select
 from app.config import settings
 from app.llm import provider as llm
 from app.llm import prompts
-from app.models import CompanyProfile, License, ProjectExperience, Score
+from app.models import CompanyProfile, GateTask, License, ProjectExperience, Score
 from app.services import audit, notifications
-from app.services.utils import normalize_key
+from app.services.utils import normalize_key, sanitize_inline, utcnow
 
 PEC_RANK = {"C-A": 5, "NO LIMIT": 5, "C-B": 4, "C-1": 3, "C-2": 2, "C-3": 1, "C-4": 0}
 
@@ -56,7 +56,7 @@ def run(db, opp) -> Score:
             warnings.append({"gate": "specialization", "reason": f"Specialization '{opp.specialization}' not evidenced in licence fields"})
 
     if opp.submission_deadline:
-        days_left = (opp.submission_deadline - datetime.utcnow()).days
+        days_left = (opp.submission_deadline - utcnow()).days
         if days_left < settings.min_days_to_bid:
             failures.append({"gate": "deadline", "reason": f"Only {days_left} day(s) to deadline"})
 
@@ -75,7 +75,7 @@ def run(db, opp) -> Score:
         subscores=subscores,
         hard_gates={"passed": passed, "failures": failures, "warnings": warnings},
         rationale=rationale,
-        provider=settings.llm_provider,
+        provider=llm.get_provider().name,
         prompt_version=prompts.SCORE_RATIONALE_V1["version"],
     )
     db.add(score)
@@ -83,6 +83,7 @@ def run(db, opp) -> Score:
     opp.score_total = total
     opp.hard_gate_result = {"passed": passed, "failures": failures, "warnings": warnings}
     opp.ai_rationale = rationale
+    opp.ai_confidence = _confidence(opp, projects, subscores, warnings)
     db.commit()
 
     audit.record(
@@ -107,7 +108,22 @@ def run(db, opp) -> Score:
     elif total < settings.score_archive_threshold:
         workflow.transition(db, opp, "AUTO_ARCHIVED", "below_threshold", detail=f"score {total}")
     else:
-        workflow.transition(db, opp, "SCORED", "scoring_complete", detail=f"score {total}")
+        # Re-scoring a bid that is already sitting in a gate must not pull it
+        # back out of that gate. Keep the workflow state consistent with the
+        # gate that is actually open.
+        pending_gate = (
+            db.execute(
+                select(GateTask)
+                .where(GateTask.opportunity_id == opp.id, GateTask.status.in_(["PENDING", "OVERDUE"]))
+            )
+            .scalars()
+            .first()
+        )
+        if pending_gate:
+            if opp.state != f"GATE{pending_gate.gate}":
+                workflow.transition(db, opp, f"GATE{pending_gate.gate}", "rescored", detail=f"score {total}")
+        else:
+            workflow.transition(db, opp, "SCORED", "scoring_complete", detail=f"score {total}")
         workflow.open_gate(
             db,
             opp,
@@ -123,7 +139,7 @@ def run(db, opp) -> Score:
 def _urgent(opp) -> bool:
     if not opp.submission_deadline:
         return False
-    return (opp.submission_deadline - datetime.utcnow()) < timedelta(days=7)
+    return (opp.submission_deadline - utcnow()) < timedelta(days=7)
 
 
 def _subscores(opp, projects, db):
@@ -206,15 +222,32 @@ def _latest_fy(db):
 
 
 def _rationale(db, opp, subscores, total, failures, warnings, projects) -> str:
-    llm_provider = llm.get_provider()
-    if llm_provider.enabled and not failures:
+    """Write the human-facing rationale for a score.
+
+    The score itself is always deterministic. This function only narrates it.
+    Tender-derived text is attacker-controlled, so it is sanitised and fenced
+    before it reaches the model.
+    """
+    provider = llm.get_provider()
+    if provider.enabled:
         summary = (
-            f"Tender: {opp.title}\nBuyer: {opp.buyer_name}\nCategory: {opp.category_internal}\n"
-            f"Value: {opp.estimated_value} {opp.currency}\nDeadline: {opp.submission_deadline}\n"
-            f"Subscores: {subscores}\nTotal: {total}\nWarnings: {warnings}\n"
-            f"Company projects: {[(p.contract_no, p.client, p.category) for p in projects[:10]]}"
+            f"Tender: {sanitize_inline(opp.title, 200)}\n"
+            f"Buyer: {sanitize_inline(opp.buyer_name, 120)}\n"
+            f"Category: {opp.category_internal}\n"
+            f"Value: {opp.estimated_value} {opp.currency}\n"
+            f"Deadline: {opp.submission_deadline}\n"
+            f"Subscores: {subscores}\n"
+            f"Total: {total}\n"
+            f"Warnings: {warnings}\n"
+            f"Company projects: {[(p.contract_no, p.client, p.category) for p in projects[:10]]}\n"
+            f"{prompts.fence_untrusted(f'{opp.title} {opp.description}', 'TENDER NOTICE')}"
         )
-        result = llm_provider.chat(prompts.SCORE_RATIONALE_V1["system"], summary, max_tokens=300)
+        result = provider.chat(
+            prompts.SCORE_RATIONALE_V1["system"],
+            prompts.fence_untrusted(summary, "SCORING INPUT"),
+            max_tokens=300,
+            task="score",
+        )
         llm.record_metric(db, "score", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():
             return result.text.strip()
@@ -230,6 +263,27 @@ def _rationale(db, opp, subscores, total, failures, warnings, projects) -> str:
     if warnings:
         parts.append("Warnings: " + "; ".join(w["reason"] for w in warnings[:2]) + ".")
     return " ".join(parts)
+
+
+def _confidence(opp, projects, subscores, warnings) -> float:
+    """How much of this score rests on real evidence rather than absence.
+
+    A high score produced by empty knowledge-base rows is not a reliable
+    signal, so the bid room shows this alongside the number.
+    """
+    signals = [
+        bool(projects),
+        bool(opp.buyer_name),
+        bool(opp.submission_deadline),
+        bool(opp.estimated_value),
+        bool(opp.category_internal and opp.category_internal != "General"),
+        bool(opp.qualification_thresholds),
+        subscores.get("margin", {}).get("score", 0) >= 9,
+        subscores.get("scope", {}).get("score", 0) >= 18,
+    ]
+    base = sum(1 for s in signals if s) / len(signals)
+    penalty = 0.05 * len(warnings)
+    return round(max(0.0, min(1.0, base - penalty)), 3)
 
 
 def override_screening(db, opp, actor: str, comment: str):

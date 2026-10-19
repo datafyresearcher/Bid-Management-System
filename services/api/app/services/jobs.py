@@ -8,6 +8,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.models import GateTask, NotificationEvent, Opportunity, Source
 from app.services import notifications
+from app.services.utils import utcnow
 
 logger = logging.getLogger("bms.jobs")
 
@@ -39,7 +40,7 @@ def run_source(db, source) -> dict:
     created = len(after_ids - before_ids)
 
     source.health = "ok"
-    source.last_scan_at = datetime.utcnow()
+    source.last_scan_at = utcnow()
     source.last_scan_stats = {"notices": len(notices), "new": created, "updated": max(0, len(notices) - created)}
     db.commit()
 
@@ -77,7 +78,7 @@ def run_scan(db=None):
             except Exception as exc:
                 logger.exception("scan failed for %s", source.code)
                 source.health = "error"
-                source.last_scan_at = datetime.utcnow()
+                source.last_scan_at = utcnow()
                 source.last_scan_stats = {"error": str(exc)[:300]}
                 db.commit()
                 stats["errors"] += 1
@@ -88,7 +89,7 @@ def run_scan(db=None):
 
 
 def _notified_recently(db, ntype, prefix, hours=20) -> bool:
-    since = datetime.utcnow() - timedelta(hours=hours)
+    since = utcnow() - timedelta(hours=hours)
     rows = (
         db.execute(
             select(NotificationEvent).where(
@@ -111,7 +112,7 @@ def watchdogs(db=None):
         db = SessionLocal()
     result = {"overdue_gates": 0, "deadline_warnings": 0, "moved_to_evaluation": 0}
     try:
-        now = datetime.utcnow()
+        now = utcnow()
         overdue = (
             db.execute(select(GateTask).where(GateTask.status == "PENDING", GateTask.due_at < now))
             .scalars()

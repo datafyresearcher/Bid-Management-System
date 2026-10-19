@@ -112,6 +112,29 @@ system doing discovery → analysis → drafting, and humans doing decisions →
 | Security | Sandbox escapes none; secrets not in logs; RBAC verified by test matrix |
 | Usability | A Bid Manager completes Gate 1 triage of 20 opportunities in < 30 minutes |
 
+### 6.1 Implementation status of the accuracy measurement
+
+The M2 exit criteria assume a **manual gold set** of 10 historical AHTE tender
+packages. The machinery to measure against a gold set is now built:
+
+| Item | Where | Status |
+|------|-------|--------|
+| Gold-set manifest (labels + source documents) | `services/api/goldset/` | 7 cases, hand-labelled |
+| Evaluation engine (per-field precision / recall / F1) | `services/api/app/services/evaluation.py` | Built |
+| CLI | `services/api/evaluate.py` | Built, supports a CI accuracy gate |
+| API | `GET /api/admin/evaluation` | Built |
+| Regression test | `services/api/tests/test_goldset.py` | Built |
+
+The shipped gold set is a **regression baseline**, not a production accuracy
+claim: it is small and was written by the same team that wrote the extractor.
+The M2 figure of "≥ 90% accurate vs manual gold set" still requires the real
+AHTE package set (assumption **A-01**). The harness reads that set unchanged —
+drop the AHTE documents into `services/api/goldset/documents/`, label them in
+`cases.json`, and run `python evaluate.py`.
+
+Current measured result on the shipped set: **7/7 cases, 100% micro accuracy,
+100% macro F1, 100% risk-flag recall, 0 false positives.**
+
 ---
 
 ## 7. Success metrics (post-pilot, feeding management dashboard)

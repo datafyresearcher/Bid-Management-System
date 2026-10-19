@@ -1,0 +1,19 @@
+{
+  "notices": [
+    {
+      "native_id": "WAPDA-OPS-2026-77",
+      "url": "https://wapda.gov.pk/tenders/77",
+      "title": "Operation and maintenance support services for 220kV switchyard and associated equipment at Mangla hydel complex",
+      "buyer_name": "WAPDA (Water and Power Development Authority)",
+      "buyer_ref": "WAPDA-OPS-2026-77",
+      "source_category": "Services",
+      "city": "Mirpur",
+      "area": "Federal",
+      "estimated_value": 380000000,
+      "published_at": "2026-10-06",
+      "submission_deadline": "2026-11-04",
+      "opening_at": "2026-11-05",
+      "description": "Three year O&M support services contract for 220kV switchyard: preventive maintenance, testing of switchgear and transformer oil, and annual shutdown support at Mangla hydel complex."
+    }
+  ]
+}

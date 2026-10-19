@@ -15,6 +15,10 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    if settings.seed_on_startup:
+        from app.bootstrap import ensure_seeded
+
+        ensure_seeded()
     task = None
     stop_event = None
     if settings.scheduler_enabled:
@@ -49,4 +53,11 @@ for module in (auth, dashboard, opportunities, gates, leads, kb, sources, admin,
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "provider": settings.llm_provider, "fixtures": settings.fixtures}
+    from app.llm import provider as llm
+
+    return {
+        "status": "ok",
+        "provider": settings.llm_provider,
+        "fixtures": settings.fixtures,
+        "llm": llm.provider_status(),
+    }

@@ -67,6 +67,8 @@ def opportunity_brief(o):
         "score_total": o.score_total,
         "hard_gate_result": o.hard_gate_result,
         "ai_rationale": o.ai_rationale,
+        "ai_confidence": o.ai_confidence,
+        "extraction_grade": o.extraction_grade,
         "documents_status": o.documents_status,
         "notice_status": o.notice_status,
         "source_refs": o.source_refs or [],

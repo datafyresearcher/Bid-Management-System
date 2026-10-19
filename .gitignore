@@ -8,6 +8,9 @@ venv/
 
 # --- Runtime data ---
 services/api/bms.db
+services/api/bms.db.*
+services/api/*.db
+services/api/*.bak
 services/api/storage/
 services/api/exports/
 *.sqlite3
