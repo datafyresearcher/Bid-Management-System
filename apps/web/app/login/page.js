@@ -39,8 +39,8 @@ export default function LoginPage() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <h1>AI Bid Management System</h1>
-        <p>Tender discovery, triage, gated review and proposal drafting.</p>
+        <h1>AHTE BMS</h1>
+        <p>AI Powered Bid Management System — tender discovery, triage, gated review and proposal drafting.</p>
         {error ? <div className="notice err">{error}</div> : null}
         <label>Email</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
