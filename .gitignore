@@ -1,0 +1,32 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# --- Runtime data ---
+services/api/bms.db
+services/api/storage/
+services/api/exports/
+*.sqlite3
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+apps/web/.next/
+apps/web/node_modules/
+npm-debug.log*
+
+# --- Env / secrets ---
+.env
+.env.local
+*.pem
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

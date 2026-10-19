@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bms
+      POSTGRES_PASSWORD: bms
+      POSTGRES_DB: bms
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./services/api
+    environment:
+      BMS_DATABASE_URL: postgresql+psycopg://bms:bms@db:5432/bms
+      BMS_STORAGE_DIR: /data/storage
+      BMS_FIXTURES: "true"
+      BMS_FIXTURES_DIR: /fixtures
+      BMS_LLM_PROVIDER: ${BMS_LLM_PROVIDER:-mock}
+      BMS_SCHEDULER_ENABLED: "true"
+      BMS_SCAN_INTERVAL_SECONDS: "3600"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BMS_SECRET_KEY: ${BMS_SECRET_KEY:-change-me-in-production}
+    ports:
+      - "8000:8000"
+    volumes:
+      - api_storage:/data/storage
+      - ./fixtures:/fixtures:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  db_data:
+  api_storage:

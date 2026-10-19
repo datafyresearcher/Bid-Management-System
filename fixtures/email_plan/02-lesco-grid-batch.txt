@@ -1,0 +1,8 @@
+Subject: Budget signal - 132kV grid stations augmentation batch (LESCO)
+From: procurement.watch@utility.example
+Window: Q3 FY2026-27 (Feb - Apr 2027)
+Value: 1,100,000,000
+Category: Substations
+Area: Punjab
+Confidence: Medium
+Body: Budget allocation earmarked for augmentation of four 132kV grid stations under distribution improvement programme. Tendering expected after board approval in Q3. Package likely to include transformer replacement, GIS retrofit and civil works. Pre-qualification may apply for the GIS portion.

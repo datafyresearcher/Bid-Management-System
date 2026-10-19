@@ -1,0 +1,267 @@
+from sqlalchemy import select
+
+from app.config import settings
+from app.db import SessionLocal, init_db
+from app.models import (
+    CategoryMapping,
+    CompanyCertificate,
+    CompanyProfile,
+    EquipmentItem,
+    FinancialYear,
+    Lead,
+    License,
+    LibraryDocument,
+    Opportunity,
+    Personnel,
+    ProjectExperience,
+    Source,
+    User,
+)
+from app.security import hash_password
+from app.services import leads as leads_service, scorer
+
+USERS = [
+    ("admin@ahte.local", "System Admin", "admin", "admin123"),
+    ("bm@ahte.local", "Bid Manager", "bid_manager", "bid123"),
+    ("engineer@ahte.local", "Proposal Engineer", "proposal_engineer", "prop123"),
+    ("finance@ahte.local", "Finance Officer", "finance", "fin123"),
+    ("mgmt@ahte.local", "Management", "management", "mgmt123"),
+    ("viewer@ahte.local", "Viewer", "viewer", "view123"),
+]
+
+SOURCES = [
+    ("ppra_punjab", "PPRA Punjab e-Procurement", "Punjab", "portal", "ppra_punjab", "https://eproc.punjab.gov.pk/", 12),
+    ("epms_federal", "Federal EPMS / EPADS", "Federal", "portal", "epms_federal", "https://epms.gov.pk/", 24),
+    ("ntdc", "NTDC Tenders", "Federal", "portal", "fixture_json", "https://ntdc.gov.pk/tenders", 24),
+    ("wapda", "WAPDA Tenders", "Federal", "portal", "fixture_json", "https://wapda.gov.pk/tenders", 24),
+    ("email_plan", "Email Inbox — Budget Signals", "Punjab", "email", "email_inbox", "", 48),
+    ("manual", "Manual Entries", "", "manual", "fixture_json", "", 0),
+]
+
+
+def seed_users(db):
+    created = 0
+    for email, name, role, password in USERS:
+        exists = db.execute(select(User).where(User.email == email)).scalars().first()
+        if not exists:
+            db.add(User(email=email, name=name, role=role, password_hash=hash_password(password)))
+            created += 1
+    db.commit()
+    return created
+
+
+def seed_kb(db):
+    company = db.execute(select(CompanyProfile)).scalars().first()
+    if company:
+        return False
+    company = CompanyProfile(
+        name="AHTE (Pvt) Ltd",
+        legal_name="AHTE Engineering & Transmission (Pvt) Ltd",
+        secp="SECP-0123456 (demo)",
+        ntn="7654321-8 (demo)",
+        tax_status="Active",
+        address="Lahore, Pakistan",
+        website="https://ahte.example",
+        summary="Power-sector EPC contractor executing NTDC and donor-funded transmission & substation works with own tower, stringing and testing resources.",
+        blacklisted=False,
+    )
+    db.add(company)
+    db.add(
+        License(
+            authority="PEC",
+            number="C-A-98765 (demo)",
+            category="C-A",
+            fields=["Electrical", "Transmission Lines", "Grid Stations", "Civil Works"],
+            approved=True,
+        )
+    )
+    for fy, turnover, net_worth, profit in [
+        ("2022-23", 4_800_000_000, 2_100_000_000, 310_000_000),
+        ("2023-24", 5_600_000_000, 2_480_000_000, 360_000_000),
+        ("2024-25", 6_400_000_000, 2_900_000_000, 420_000_000),
+    ]:
+        db.add(
+            FinancialYear(
+                fiscal_year=fy,
+                turnover=turnover,
+                net_worth=net_worth,
+                profit=profit,
+                currency="PKR",
+                auditor="Demo & Co. Chartered Accountants",
+                bonding_capacity=1_500_000_000,
+                approved=True,
+            )
+        )
+    projects = [
+        ("PD-EHV-24-2021", "National Transmission & Despatch Company (NTDC)", "Design, supply and installation of 220kV double-circuit transmission line (approx. 82 km) including tower erection, stringing and testing.", "Transmission Lines", 3_650_000_000, "Punjab", "2021", "2024", "Sole", "PSDP"),
+        ("PD-EHV-26-2022", "National Transmission & Despatch Company (NTDC)", "500kV grid station extension: GIS bays, transformer installation, protection and SCADA works.", "Substations", 5_200_000_000, "Punjab", "2022", "2025", "Sole", "PSDP"),
+        ("TLC-14", "NTDC (donor-funded)", "132kV transmission line construction package TLC-14 under donor financing.", "Transmission Lines", 2_250_000_000, "Khyber Pakhtunkhwa", "2020", "2023", "Sole", "ADB Loan"),
+        ("ADB-201", "Power utility (ADB funded)", "220kV substation and associated transmission works under ADB-financed power transmission investment programme.", "Substations", 3_100_000_000, "Sindh", "2021", "2024", "JV Partner", "ADB Loan"),
+        ("NOR-125", "NTDC (Nordic-funded)", "132kV grid station upgrading and rehabilitation works under Nordic financing.", "Substations", 1_480_000_000, "Punjab", "2022", "2024", "Sole", "Nordic Fund"),
+        ("WB-08A", "Distribution company (World Bank funded)", "Rehabilitation and augmentation of 11kV/132kV distribution system, WB-08A package.", "Civil Infrastructure", 980_000_000, "Punjab", "2023", "2025", "Sole", "World Bank"),
+    ]
+    for contract_no, client, scope, category, value, area, start, end, role, funding in projects:
+        db.add(
+            ProjectExperience(
+                contract_no=contract_no,
+                client=client,
+                scope=scope,
+                category=category,
+                value=value,
+                currency="PKR",
+                country="PK",
+                area=area,
+                start_date=start,
+                end_date=end,
+                role=role,
+                funding_source=funding,
+                certificate_ref=f"REF-{contract_no}",
+                keywords=category,
+                performance_note="Completed on schedule with satisfactory performance certificates.",
+                approved=True,
+            )
+        )
+    personnel = [
+        ("Eng. Ahmed Khan", "Project Manager", "ELECT-PM-1101", 18, "B.Sc. Electrical Engineering", "PD-EHV-24-2021; PD-EHV-26-2022", ["PMP"]),
+        ("Eng. Sana Malik", "Resident Engineer", "ELECT-RE-2205", 12, "B.Sc. Electrical Engineering", "TLC-14; ADB-201", []),
+        ("Eng. Bilal Hussain", "QA/QC Engineer", "ELECT-QC-3310", 9, "B.Sc. Electrical Engineering", "PD-EHV-26-2022; WB-08A", ["ISO 9001 Lead Auditor"]),
+        ("Mr. Tariq Mehmood", "HSE Officer", "HSE-4402", 11, "B.Sc. Environmental Science", "PD-EHV-24-2021", ["NEBOSH IGC"]),
+        ("Eng. Fatima Sheikh", "Design Engineer", "ELECT-DE-5108", 7, "M.Sc. Power Systems", "ADB-201", []),
+        ("Mr. Usman Ali", "Surveyor", "SUR-6601", 14, "D.A.E. Civil", "TLC-14; NOR-125", []),
+    ]
+    for name, position, pec, years, education, key_projects, certs in personnel:
+        db.add(
+            Personnel(
+                name=name,
+                position=position,
+                pec_reg_no=pec,
+                years_experience=years,
+                education=education,
+                key_projects=key_projects,
+                certifications=certs,
+                availability="Available",
+                approved=True,
+            )
+        )
+    equipment = [
+        ("Hydraulic Tower Erection Crane 25T", "Cranes", "25 ton hydraulic", 2, "Owned", 2021),
+        ("Stringing Equipment Set (Pullers & Tensioners)", "Stringing", "60 kN pulling / 40 kN tensioning", 3, "Owned", 2022),
+        ("Concrete Batching Plant", "Civil", "30 m3/hr", 1, "Owned", 2020),
+        ("Transit Mixers", "Civil", "6 m3", 6, "Owned", 2021),
+        ("Test Van — Transformer & Cable Testing", "Testing", "500kV class HV test set", 1, "Owned", 2023),
+        ("Excavators", "Civil", "1.2 m3 bucket", 4, "Owned", 2022),
+        ("Tower Assembly Cranes 10T", "Cranes", "10 ton", 3, "Owned", 2021),
+        ("Drilling Rigs for Foundations", "Foundations", "Auger rig", 2, "Leased", 2024),
+    ]
+    for name, category, spec, qty, ownership, year in equipment:
+        db.add(
+            EquipmentItem(
+                name=name,
+                category=category,
+                spec=spec,
+                quantity=qty,
+                ownership=ownership,
+                year=year,
+                condition="Good",
+                location="Central depot, Lahore",
+                approved=True,
+            )
+        )
+    for name, issuer, number in [
+        ("ISO 9001:2015 QMS Certificate", "Demo Certification Body", "ISO9K-2211 (demo)"),
+        ("ISO 14001:2015 EMS Certificate", "Demo Certification Body", "ISO14K-2212 (demo)"),
+        ("ISO 45001:2018 OH&S Certificate", "Demo Certification Body", "ISO45K-2213 (demo)"),
+        ("PEC Enlistment Certificate C-A", "Pakistan Engineering Council", "PEC-CA-98765 (demo)"),
+    ]:
+        db.add(CompanyCertificate(name=name, issuer=issuer, number=number, valid_from="2024-01-01", approved=True))
+    library = [
+        ("Company Policy — Bid Security and Bank Guarantees", "policy", "bid security, bank guarantee, finance", "Internal policy governing issuance and recovery of bid securities, performance bonds and advance payment guarantees."),
+        ("HSE Manual Summary", "manual", "hse, safety, environment", "Site HSE organisation, PPE standards, incident reporting and emergency response procedures for transmission works."),
+        ("Quality Assurance Procedure — Transmission Works", "procedure", "quality, qa qc, transmission", "ITPs, material inspection, tower erection tolerances, stringing sag checks and commissioning test records."),
+        ("Subcontracting and JV Policy", "policy", "subcontract, joint venture, pec", "Rules for JV formation per PEC requirements and subcontractor prequalification."),
+    ]
+    for title, doc_type, tags, content in library:
+        db.add(LibraryDocument(title=title, type=doc_type, tags=tags, content_text=content, approved=True))
+    db.commit()
+    return True
+
+
+def seed_sources(db):
+    created = 0
+    for code, name, area, type_, adapter, url, schedule in SOURCES:
+        exists = db.execute(select(Source).where(Source.code == code)).scalars().first()
+        if not exists:
+            db.add(
+                Source(
+                    code=code,
+                    name=name,
+                    area=area,
+                    type=type_,
+                    adapter=adapter,
+                    url=url,
+                    schedule_hours=schedule,
+                    enabled=True,
+                    approved=True,
+                )
+            )
+            created += 1
+    db.commit()
+    return created
+
+
+def seed_mappings(db):
+    if db.execute(select(CategoryMapping)).scalars().first():
+        return
+    for source_code, source_category, internal in [
+        ("ppra_punjab", "Electrical Works", "Transmission Lines"),
+        ("ppra_punjab", "Civil Works", "Civil Infrastructure"),
+        ("ppra_punjab", "Supply of Goods", "Supply / Goods"),
+        ("epms_federal", "Works/Electrical", "Substations"),
+        ("epms_federal", "Goods", "Supply / Goods"),
+    ]:
+        db.add(CategoryMapping(source_code=source_code, source_category=source_category, internal_category=internal))
+    db.commit()
+
+
+def run_demo_pipeline(db):
+    if db.execute(select(Opportunity)).scalars().first():
+        return
+    from app.services import jobs
+
+    stats = jobs.run_scan(db)
+    normalized = db.execute(select(Opportunity).where(Opportunity.state == "NORMALIZED")).scalars().all()
+    for opp in normalized:
+        scorer.run(db, opp)
+    print(f"Demo pipeline: scanned {stats}, scored {len(normalized)} opportunities")
+    leads_service.import_fixture_leads(db)
+    from app.connectors import email_inbox
+
+    email_source = db.execute(select(Source).where(Source.code == "email_plan")).scalars().first()
+    if email_source:
+        email_inbox.import_leads(db, email_source)
+
+
+def main():
+    init_db()
+    db = SessionLocal()
+    try:
+        print(f"Users created: {seed_users(db)}")
+        kb_seeded = seed_kb(db)
+        print(f"KB seeded: {kb_seeded}")
+        print(f"Sources created: {seed_sources(db)}")
+        seed_mappings(db)
+        if settings.fixtures:
+            run_demo_pipeline(db)
+        counts = {
+            "users": db.query(User).count(),
+            "sources": db.query(Source).count(),
+            "opportunities": db.query(Opportunity).count(),
+            "leads": db.query(Lead).count(),
+        }
+        print(f"Seed complete: {counts}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,29 @@
+{
+  "LESCO/CE/2026-27/GSS-14": [
+    {
+      "filename": "ITT_GSS-14.txt",
+      "content": "Instructions to Bidders - LESCO 132kV Grid Station Sundar Industrial Estate (Ref: LESCO/CE/2026-27/GSS-14). 1. Scope: Construction of new 132kV Grid Station including supply, installation, testing and commissioning of 2x40/50 MVA power transformers, 132kV GIS switchgear, control and protection panels, and associated civil works. 2. Eligibility: Bidders shall hold a valid PEC licence in category C-A for electrical works. The bidder must have completed at least two similar grid station projects of 132kV or above in the last ten years. 3. Bid security: Bid security of PKR 17,000,000 shall be submitted in the form of bank guarantee or deposit at call, valid for 120 days. 4. Submission: Bids shall be submitted through the PPRA Punjab e-procurement portal by the last date of submission, 05-Nov-2026, at 11:00 hours. This is a single stage two envelope procurement: a technical proposal and a financial proposal shall be submitted separately. 5. Price: Prices shall be quoted in PKR as per the priced bill of quantities. No price adjustment shall be allowed for the contract period; bidders are advised to account for escalation in their unit rates. 6. Advance payment: An advance payment of 10 percent of the contract price may be released against submission of an irrevocable advance payment guarantee from a scheduled bank. 7. Damages: Liquidated damages for delay shall apply at the rate of 0.05 percent of the contract price per day of delay, capped at 10 percent of the contract price. 8. Taxes: All applicable taxes including sales tax and income tax shall be borne by the contractor and included in the quoted rates. 9. Warranty: The contractor shall provide a defect liability period of 12 months from taking over. 10. Clarification: Queries shall be submitted through the portal at least 7 days before the last date of submission."
+    },
+    {
+      "filename": "GCC_GSS-14.txt",
+      "content": "General Conditions of Contract - LESCO Grid Station Package GSS-14. Clause 12: Performance security equal to 5 percent of the contract price shall be furnished within 28 days of contract signature. Clause 15: The Employer may terminate the contract for convenience with 30 days written notice. Clause 22: Contractor liability under the contract shall be capped at 100 percent of the contract price for all direct losses. Clause 24: All disputes shall be resolved first by amicable settlement and then by arbitration under the Arbitration Act 1940 with the seat of arbitration in Lahore, Pakistan. Clause 27: The contractor shall be responsible for the design of the earthing and protection scheme and shall submit design calculations for employer approval. Clause 31: Insurance: All risk insurance for the works shall be arranged by the contractor. Clause 34: Site organisation shall include a resident engineer, QA/QC engineer and HSE officer acceptable to the employer."
+    },
+    {
+      "filename": "BOQ_GSS-14.txt",
+      "content": "Priced BOQ summary - 132kV Grid Station, Sundar Industrial Estate. Item A: Site preparation and earthworks. Item B: Foundations for transformers, GIS building and gantries. Item C: Supply and installation of 132kV GIS bays. Item D: Power transformers 2x40/50 MVA with OLTC and associated fittings. Item E: Control, protection and SCADA panels. Item F: Earthing and lightning protection. Item G: Testing and commissioning including HV tests. Taxes and duties as applicable."
+    }
+  ],
+  "LESCO/CE/2026-27/CIV-27": [
+    {
+      "filename": "ITT_CIV-27.txt",
+      "content": "Instructions to Bidders - Construction of control house, boundary wall and site development works for 132kV grid station at Raiwind (Ref: LESCO/CE/2026-27/CIV-27). Eligibility: PEC licence category C-B or above (civil works). Bid security of PKR 2,900,000 in the form of pay order or demand draft. Last date of submission: 08-Nov-2026 at 12:00 hours. Work includes control building, boundary wall, roads, drainage and landscaping. Liquidated damages at 0.05 percent of contract price per day, capped at 10 percent. Defect liability period 12 months. Site layout drawings are attached as Annexure A."
+    }
+  ],
+  "GEPCO/MM/2026/SUP-33": [
+    {
+      "filename": "Tender_SUP-33.txt",
+      "content": "Procurement of 11kV XLPE cables and termination kits for GEPCO distribution network augmentation (Ref: GEPCO/MM/2026/SUP-33). Bidders shall be manufacturers or authorized distributors with valid PEC licence C-2 or above. Bid security of PKR 1,930,000 in the form of deposit at call. Last date of submission: 03-Nov-2026 at 10:30 hours. Quantities: 11kV XLPE cable 3C x 185 sqmm - 42 km; termination kits - 160 sets. This is a firm price without adjustment contract for the delivery period. Delivery within 16 weeks of purchase order. Warranty: 24 months from delivery. Inspection at factory and site by GEPCO engineers."
+    }
+  ],
+  "MEPCO/STORES/2026/AUC-09": []
+}
