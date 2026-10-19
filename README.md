@@ -1,5 +1,7 @@
 # AI-Powered Bid Management System (BMS)
 
+[![Deploy to Vercel](https://github.com/datafyresearcher/Bid-Management-System/actions/workflows/deploy.yml/badge.svg)](https://github.com/datafyresearcher/Bid-Management-System/actions/workflows/deploy.yml)
+
 **Design & Architecture Documentation Pack — Pakistan MVP, KSA expansion path**
 
 | | |
@@ -227,6 +229,54 @@ the gold set:
 cd services/api
 .venv\Scripts\python.exe smoke_test.py      # needs the API running
 # BMS_BASE_URL=http://localhost:8017 .venv\Scripts\python.exe smoke_test.py
+```
+
+## CI/CD — automatic deployment to Vercel
+
+Every push to `main` runs `.github/workflows/deploy.yml`, which gates on quality
+and then deploys both halves of the system to Vercel.
+
+```
+push to main
+   └─ verify      pytest suite + gold-set evaluation (must reach 90% case accuracy) + next build
+        ├─ deploy-api   services/api  → Vercel project "bms-ahte-api"
+        └─ deploy-web   apps/web      → Vercel project "bms-ahte"
+             └─ smoke  poll the live API /api/health and the web app
+```
+
+The deploy jobs are **serialised** by a `vercel-production` concurrency group, so
+two pushes can never race to claim the production alias.
+
+| Live target | URL |
+|---|---|
+| Web app (Next.js) | https://bms-ahte.vercel.app |
+| API (FastAPI) | https://bms-ahte-api.vercel.app |
+
+**Repository secrets and variables**
+
+| Name | Kind | Value |
+|---|---|---|
+| `VERCEL_TOKEN` | secret | Vercel access token used by the CLI in CI |
+| `VERCEL_ORG_ID` | secret | `team_xCaLHoqSXx04VvpNyOtyUS9m` |
+| `VERCEL_WEB_PROJECT_ID` | secret | `prj_qYDGQK2yHvlBQes5SggeyA4OFBCP` |
+| `VERCEL_API_PROJECT_ID` | secret | `prj_t8DosVYqdTm8yyxS44rDqtNC1u4q` |
+| `VERCEL_WEB_URL` | variable | `https://bms-ahte.vercel.app` (smoke test target) |
+| `VERCEL_API_URL` | variable | `https://bms-ahte-api.vercel.app` (smoke test target) |
+
+Runtime configuration for each Vercel project (database URL, CORS origins,
+`NEXT_PUBLIC_API_URL`, LLM provider, …) lives in the **Vercel project settings**,
+not in Git, so it is never exposed in the repository.
+
+> **Rotating the token.** Vercel access tokens are short-lived. When the pipeline
+> starts failing with an authentication error, create a fresh token in
+> *Vercel → Settings → Tokens* and update the `VERCEL_TOKEN` repository secret:
+> `gh secret set VERCEL_TOKEN --body "<new token>"`. The pipeline needs no other
+> change.
+
+To run a deployment without pushing:
+
+```bash
+gh workflow run deploy.yml
 ```
 
 ## Key terminology
