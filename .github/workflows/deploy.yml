@@ -72,6 +72,7 @@ jobs:
 
       - name: Check the Vercel token
         run: |
+          VERCEL_TOKEN="$(printf '%s' "$VERCEL_TOKEN" | tr -d '\r\n')"
           echo "token length: ${#VERCEL_TOKEN}"
           if ! out=$(vercel whoami --token="$VERCEL_TOKEN" 2>&1); then
             echo "::error::The Vercel token is expired or invalid."
@@ -80,6 +81,7 @@ jobs:
             exit 1
           fi
           echo "Vercel token is valid"
+          echo "VERCEL_TOKEN=$VERCEL_TOKEN" >> "$GITHUB_ENV"
 
       - name: Pull Vercel project settings
         working-directory: services/api
@@ -107,6 +109,7 @@ jobs:
 
       - name: Check the Vercel token
         run: |
+          VERCEL_TOKEN="$(printf '%s' "$VERCEL_TOKEN" | tr -d '\r\n')"
           echo "token length: ${#VERCEL_TOKEN}"
           if ! out=$(vercel whoami --token="$VERCEL_TOKEN" 2>&1); then
             echo "::error::The Vercel token is expired or invalid."
@@ -115,6 +118,7 @@ jobs:
             exit 1
           fi
           echo "Vercel token is valid"
+          echo "VERCEL_TOKEN=$VERCEL_TOKEN" >> "$GITHUB_ENV"
 
       - name: Pull Vercel project settings
         working-directory: apps/web
