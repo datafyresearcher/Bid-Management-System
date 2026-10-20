@@ -74,6 +74,18 @@ documents (modeled on PPRA Punjab, EPMS Federal, NTDC/WAPDA) is loaded from `fix
 full pipeline — discovery → analysis → 5 human gates → proposal drafting → submission pack — runs
 end-to-end without any external portal access or LLM key.
 
+### Live portal reading
+
+The connectors can also read the authorities' own pages, so the dashboard shows what was published
+today rather than what was saved earlier. Set `BMS_FIXTURES=false` and the connectors fetch
+PPRA Punjab's Active Procurement grid, the federal EPMS and EPADS lists, NTDC's public tender feed
+and WAPDA's tender notices. Only public pages are read, at one request every three seconds, and
+nothing ever signs in to a portal. **[docs/05 §11](docs/05-pakistan-sources-and-connectors.md)
+has the full setup, the runbook, and the two things to know: PPRA Punjab's portal answers only
+from inside Pakistan, and the deployed review environment keeps each instance's records on that
+instance, so the source register's **Scan** button reads a portal on demand.**
+
+
 ### Option A — Docker Compose (everything)
 
 ```bash

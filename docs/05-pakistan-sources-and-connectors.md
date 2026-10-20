@@ -358,6 +358,13 @@ function budget of a serverless deployment.
 Where the API runs as a long-lived service, the scheduler loop runs the same code on an interval
 (`BMS_SCHEDULER_ENABLED=true`, `BMS_SCAN_INTERVAL_SECONDS`).
 
+**Where the records live.** The API keeps what it reads in its own database. On a server with a
+persistent database — the in-house deployment of D-08 — the scheduler keeps that database current,
+and the dashboard is simply always live. The review deployment on Vercel gives each instance its
+own database, so a new instance starts with the register but no tenders; the **Scan** button in the
+source register reads a portal on demand, one source at a time, so that a portal which is slow or
+unreachable never holds up the others.
+
 A scan that returns no notices marks the source **degraded** rather than healthy — a portal that
 answers but yields nothing has changed shape under us, and that is a drift signal.
 
