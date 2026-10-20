@@ -73,6 +73,14 @@ export default function DashboardPage() {
     const other = feed.records_other
       ? ` The other ${feed.records_other} are seeded demo records, not live tenders.`
       : "";
+    if (feed.portals_unreachable) {
+      // A host this deployment cannot reach is not going to be fixed by
+      // pressing Scan again, so the banner must not suggest that it would.
+      return {
+        tone: "err",
+        text: `Live reading: ${read} ${count}${other} ${feed.portals_unreachable} portal(s) cannot be reached from this deployment (${feed.unreachable_names.join(", ")}) — their tenders are missing from this view. Scanning again will not help until the API runs where that host is reachable.`,
+      };
+    }
     if (feed.portals_failed) {
       return {
         tone: "err",
@@ -324,6 +332,11 @@ export default function DashboardPage() {
                   <td data-label="Last scan">
                     {s.last_scan_at ? fmtDateTime(s.last_scan_at) : <span className="muted">never</span>}
                     {s.last_scan_stats?.mode ? <div className="muted">{s.last_scan_stats.mode}</div> : null}
+                    {s.last_scan_stats?.error ? (
+                      <div className="muted" title={s.last_scan_stats.error}>
+                        {(s.last_scan_stats.error || "").slice(0, 110)}
+                      </div>
+                    ) : null}
                   </td>
                   <td data-label="Health"><span className={sourceHealthClass(s.health)}>{s.health}</span></td>
                   {canScan ? (

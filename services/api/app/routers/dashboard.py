@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.connectors.http_client import is_connection_failure
 from app.db import get_db
 from app.models import GateTask, NotificationEvent, Opportunity, Source, User
 from app.security import get_current_user
@@ -100,6 +101,13 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
     failed = [s for s in portals if s.health == "error"]
     never_read = [s for s in portals if not s.last_scan_at]
     last_scan = max((s.last_scan_at for s in portals if s.last_scan_at), default=None)
+    # A portal this host cannot reach at all is not the same thing as one that
+    # answered and failed. The first will not be fixed by pressing Scan again;
+    # saying so is the difference between an honest banner and a false promise.
+    unreachable = [
+        s for s in failed
+        if is_connection_failure((s.last_scan_stats or {}).get("error", ""))
+    ]
 
     # Records carry the mode of the read that captured them, so what is on
     # screen can be counted by where it came from.
@@ -115,7 +123,9 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "portals_read_live": len(read_live),
         "portals_failed": len(failed),
         "portals_never_read": len(never_read),
+        "portals_unreachable": len(unreachable),
         "failed_names": [s.name for s in failed],
+        "unreachable_names": [s.name for s in unreachable],
         "last_scan_at": iso(last_scan),
         "records_total": total_records,
         "records_live": live_records,

@@ -378,6 +378,10 @@ first; Punjab's answers only from inside Pakistan and is often not reached withi
 A scan that returns no notices marks the source **degraded** rather than healthy — a portal that
 answers but yields nothing has changed shape under us, and that is a drift signal.
 
+A read that does not happen at all is recorded as a failure, with the reason kept on the source.
+The dashboard names the portal, and says *cannot be reached* when the host did not answer at all:
+that is not a portal waiting to be scanned again, and the banner does not pretend otherwise.
+
 ### 11.7 Drift detection
 
 `python capture_golden.py` saves the current listing page of each portal into
@@ -390,9 +394,32 @@ dashboard. Re-run the capture when a portal changes and the tests tell you what 
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
 | Source health `degraded`, 0 notices | Portal layout changed, or the listing moved | Re-run `capture_golden.py`, read the diff, update the parser |
-| Source health `error`, "could not connect" | The portal does not accept connections from this host | PPRA Punjab's e-Procurement portal answers only from inside Pakistan. Run the API on a host with a route into Pakistan |
+| Source health `error`, "could not connect" | The portal does not accept connections from this host | PPRA Punjab's e-Procurement portal answers only from inside Pakistan — run the API on a host with a route into Pakistan; see §11.9 for the hosts and addresses |
 | Source health `error` | Portal unreachable, or the TLS fingerprint was rejected | Check the portal by hand; confirm `curl_cffi` is installed (`pip install -r requirements.txt`) |
 | Records appear but with no closing date | The portal does not publish one | Expected for EPADS, NTDC and WAPDA; the deadline arrives with the notice document at Gate 2 |
 | Records appear with a document link instead of a page | The portal has no per-notice page | Expected for PPRA Punjab; the link opens the authority's own notice document |
 | A tender appears twice | Two genuinely different notices share a name | Check the references: two different references are two different tenders |
 | Scan times out | The portal is slow today | Lower `BMS_LIVE_MAX_PAGES`; the scan is per source and can be repeated |
+
+### 11.9 Reaching PPRA Punjab
+
+Punjab's Active Procurement grid is published in exactly one place:
+`https://eproc.punjab.gov.pk/ActiveTenders.aspx`, on `103.226.216.188` (Punjab Information
+Technology Board). The other Punjab hosts answer from anywhere, but none of them carries the grid:
+
+| Host | IP | Answers from outside Pakistan? | Serves the Active Procurement grid? |
+|------|----|--------------------------------|--------------------------------------|
+| `eproc.punjab.gov.pk` | 103.226.216.188 | No | **Yes — the only one** |
+| `ppra.punjab.gov.pk` | 103.226.216.186 | Yes | No — 404, it links on to `eproc` |
+| `ep.punjab.gov.pk` | 103.226.217.109 | Yes | No — a different application |
+
+From the Vercel deployment, both port 443 and port 80 to `eproc.punjab.gov.pk` time out at the TCP
+connect, so the scheme cannot be worked around and no alternate hostname helps: the host itself is
+unreachable from there. The same connector, unchanged, read 300 notices in 15 seconds from a host in
+Karachi, so the connector is correct and the network is the constraint.
+
+**What this means in practice.** The dashboard reads PPRA Punjab whenever the API runs where that
+host is reachable — the in-house deployment of D-08, or any host on a Pakistani network. Until then
+the source register shows PPRA Punjab as never read and the dashboard says so, rather than
+pretending the provincial tenders are covered.
+

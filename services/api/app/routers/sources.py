@@ -90,9 +90,7 @@ def scan_source(source_id: int, user: User = Depends(require_roles("bid_manager"
     try:
         result = jobs.run_source(db, row)
     except Exception as exc:
-        row.health = "error"
-        row.last_scan_stats = {"error": str(exc)[:300]}
-        db.commit()
+        jobs.record_scan_failure(db, row, exc)
         raise HTTPException(status_code=502, detail=f"Scan failed: {exc}")
     return result
 

@@ -80,5 +80,9 @@ def read_within_budget(db, sources, budget=None):
             break
         try:
             jobs.run_source(db, source, page_budget=1, scan_seconds=6, connect_timeout=4)
-        except Exception:
+        except Exception as exc:
+            # Record the failure. A portal this deployment cannot reach has to
+            # be recorded as unread, or it looks healthy on the register and
+            # the dashboard invites a Scan that can never succeed.
             logger.warning("Startup read of %s failed", source.code)
+            jobs.record_scan_failure(db, source, exc)

@@ -38,6 +38,28 @@ class FetchError(RuntimeError):
     """A portal could not be read."""
 
 
+# The phrases a failed connection produces. They are the difference between a
+# portal that answered and said no, and a portal that cannot be reached from
+# here at all — the first may be worth another try, the second will not answer
+# however long we wait.
+CONNECTION_MARKERS = (
+    "could not connect",
+    "failed to connect",
+    "connection refused",
+    "connection timed out",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "no route to host",
+    "network is unreachable",
+)
+
+
+def is_connection_failure(text) -> bool:
+    """Whether a failure was a host that could not be reached."""
+    value = str(text).lower()
+    return any(marker in value for marker in CONNECTION_MARKERS)
+
+
 def _is_connection_failure(exc: Exception) -> bool:
     """Whether the host could not be reached at all.
 
@@ -45,18 +67,7 @@ def _is_connection_failure(exc: Exception) -> bool:
     that cannot be reached from here — the first may be worth another try,
     the second will not answer however long we wait.
     """
-    text = str(exc).lower()
-    markers = (
-        "could not connect",
-        "failed to connect",
-        "connection refused",
-        "connection timed out",
-        "name or service not known",
-        "temporary failure in name resolution",
-        "no route to host",
-        "network is unreachable",
-    )
-    return any(marker in text for marker in markers)
+    return is_connection_failure(exc)
 
 
 class LiveClient:

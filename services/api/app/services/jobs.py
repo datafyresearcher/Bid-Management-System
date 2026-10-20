@@ -83,6 +83,23 @@ def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=
     return {"notices": len(notices), "new": created}
 
 
+def record_scan_failure(db, source, exc):
+    """Record that a read of a portal did not happen.
+
+    A portal that could not be read has to be recorded as such. Leaving it
+    looking healthy — or merely unread — tells the user that another press of
+    the Scan button would fix it, which is not true of a host this
+    deployment cannot reach at all.
+    """
+    source.health = "error"
+    source.last_scan_at = utcnow()
+    source.last_scan_stats = {
+        "error": str(exc)[:300],
+        "mode": "saved-capture" if settings.fixtures else "live",
+    }
+    db.commit()
+
+
 def run_scan(db=None):
     own = db is None
     if own:
@@ -105,10 +122,7 @@ def run_scan(db=None):
                 stats["updated"] += max(0, result.get("notices", 0) - result.get("new", 0))
             except Exception as exc:
                 logger.exception("scan failed for %s", source.code)
-                source.health = "error"
-                source.last_scan_at = utcnow()
-                source.last_scan_stats = {"error": str(exc)[:300]}
-                db.commit()
+                record_scan_failure(db, source, exc)
                 stats["errors"] += 1
         return stats
     finally:
