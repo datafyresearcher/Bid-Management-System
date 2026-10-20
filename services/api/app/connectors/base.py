@@ -14,6 +14,10 @@ class BaseConnector:
     page_budget = None
     scan_seconds = None
     connect_timeout = None
+    # How long one request to a portal may take. A read that has to fit a
+    # tight window can ask for less, so that one slow portal cannot spend the
+    # whole of it.
+    request_timeout = None
     # How many times a failed request is retried. A read that has to fit a
     # tight window can ask for fewer, because a host that cannot be reached
     # costs the same however many times it is tried.
@@ -61,7 +65,7 @@ class BaseConnector:
 
         return LiveClient(
             user_agent=settings.user_agent,
-            timeout=settings.live_request_timeout,
+            timeout=self.request_timeout or settings.live_request_timeout,
             min_interval=settings.live_min_interval,
             retries=self.retries if self.retries is not None else settings.live_retries,
             browser_ua=settings.live_browser_ua,

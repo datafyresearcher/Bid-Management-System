@@ -81,6 +81,35 @@ def test_the_startup_read_stops_when_the_budget_is_spent(monkeypatch):
         # A host that cannot be reached costs the same however many times it
         # is tried, so the cold start does not wait for it.
         assert kwargs["retries"] == 0
+        # And one slow portal cannot spend the whole cold start on its own.
+        assert kwargs["request_timeout"] <= 20
+
+
+def test_the_portal_that_may_not_answer_is_read_first(monkeypatch):
+    """Punjab's host may not answer at all; that is cheapest to find out first."""
+    from app import bootstrap
+    from app.services import jobs
+
+    order = []
+    monkeypatch.setattr(jobs, "run_source", lambda *args, **kwargs: order.append(args[1].code))
+
+    class FakeSource:
+        def __init__(self, code, tier):
+            self.code = code
+            self.tier = tier
+
+    sources = [
+        FakeSource("epads_federal", "P1"),
+        FakeSource("epms_federal", "P1"),
+        FakeSource("ntdc", "P1"),
+        FakeSource("wapda", "P1"),
+        FakeSource("ppra_punjab", "P0"),
+    ]
+
+    bootstrap.read_within_budget(None, sources, budget=45)
+
+    assert order[0] == "ppra_punjab"
+    assert len(order) == len(sources)
 
 
 def test_every_portal_gets_a_turn_in_the_cold_start(monkeypatch):

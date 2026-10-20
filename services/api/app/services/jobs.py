@@ -19,7 +19,7 @@ ACTIVE_STATES = {
 }
 
 
-def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=None, retries=None) -> dict:
+def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=None, retries=None, request_timeout=None) -> dict:
     """Read one source and file what it found.
 
     The budgets are per-scan overrides. A read that has to fit inside a tight
@@ -44,6 +44,8 @@ def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=
         connector.connect_timeout = connect_timeout
     if retries is not None:
         connector.retries = retries
+    if request_timeout is not None:
+        connector.request_timeout = request_timeout
 
     notices = connector.fetch_listing() or []
     raw = getattr(connector, "last_raw", None)

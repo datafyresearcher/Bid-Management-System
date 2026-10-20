@@ -69,22 +69,26 @@ def populate_from_portals():
 def read_within_budget(db, sources, budget=None):
     """Read the given sources until the budget is spent.
 
-    The federal portals answer quickly from anywhere. Punjab's answers only
-    from inside Pakistan, so it comes last — but it is still read, because a
-    portal that cannot be reached has to be recorded as such rather than left
-    looking healthy and unread.
+    Every portal is given a turn, and a portal that cannot be reached is
+    recorded as such rather than left looking healthy and unread. Two things
+    make that possible:
 
-    The budget is shared out fairly: each source gets a slice of what is
-    left, so a slow portal cannot starve the one after it. A host that does
-    not answer fails on the connect timeout, which costs a few seconds and
-    tells the dashboard the truth about that portal.
+    * **Punjab is read first.** It is the only portal whose host may not
+      answer at all from here, and a host that does not answer is discovered
+      by trying to open a connection to it — which costs a few seconds. The
+      federal portals answer quickly from anywhere, so they can afford to
+      wait their turn.
+    * **The budget is shared out fairly.** Each source gets a slice of what is
+      left, so a slow portal cannot starve the one after it, and one request
+      is bounded, so a portal that is slow today cannot spend the whole cold
+      start on its own.
     """
     from app.config import settings
     from app.services import jobs
 
     limit = budget if budget is not None else settings.live_startup_budget
     started = time.monotonic()
-    ordered = sorted(sources, key=lambda s: (s.tier != "P1", s.code))
+    ordered = sorted(sources, key=lambda s: (s.tier or "", s.code))
     for index, source in enumerate(ordered):
         left = limit - (time.monotonic() - started)
         if left < CONNECT_ATTEMPT_COST:
@@ -100,6 +104,7 @@ def read_within_budget(db, sources, budget=None):
                 page_budget=1,
                 scan_seconds=slice_seconds,
                 connect_timeout=4,
+                request_timeout=settings.live_startup_request_timeout,
                 # A host that cannot be reached costs the same however many
                 # times it is tried, so the cold start does not wait for it.
                 retries=0,
