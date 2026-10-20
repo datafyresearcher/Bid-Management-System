@@ -340,18 +340,18 @@ function Table({ rows, approve, cols, moneyCols = [], busy }) {
           {rows.map((row) => (
             <tr key={row.id}>
               {cols.map((c) => (
-                <td key={c}>
+                <td key={c} data-label={c.replace(/_/g, " ")}>
                   {moneyCols.includes(c) ? fmtMoney(row[c]) : Array.isArray(row[c]) ? row[c].join(", ") : String(row[c] ?? "—")}
                 </td>
               ))}
-              <td>
+              <td data-label="Approved">
                 <button className={row.approved ? "btn small primary" : "btn small"} disabled={busy} onClick={() => approve(row.id, !row.approved)}>
                   {row.approved ? "approved" : "pending"}
                 </button>
               </td>
             </tr>
           ))}
-          {rows.length === 0 ? <tr><td colSpan={cols.length + 1} className="muted">No records.</td></tr> : null}
+          {rows.length === 0 ? <tr><td colSpan={cols.length + 1} data-label="" className="muted">No records.</td></tr> : null}
         </tbody>
       </table>
     </div>

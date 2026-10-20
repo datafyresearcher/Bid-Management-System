@@ -111,10 +111,10 @@ export default function AdminPage() {
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td>{u.name}</td>
-                    <td>{u.email}</td>
-                    <td>{u.role}</td>
-                    <td>
+                    <td data-label="Name">{u.name}</td>
+                    <td data-label="Email">{u.email}</td>
+                    <td data-label="Role">{u.role}</td>
+                    <td data-label="Active">
                       <button
                         className={u.active ? "btn small primary" : "btn small"}
                         disabled={busy}
@@ -157,10 +157,10 @@ export default function AdminPage() {
               <tbody>
                 {mappings.map((m) => (
                   <tr key={m.id}>
-                    <td>{m.source_code}</td>
-                    <td>{m.source_category}</td>
-                    <td>{m.internal_category}</td>
-                    <td>
+                    <td data-label="Source">{m.source_code}</td>
+                    <td data-label="Source category">{m.source_category}</td>
+                    <td data-label="Internal">{m.internal_category}</td>
+                    <td data-label="">
                       <button className="btn small danger" disabled={busy} onClick={() => act(() => api(`/api/admin/category-mappings/${m.id}`, { method: "DELETE" }), "Mapping deleted")}>
                         Delete
                       </button>
@@ -215,19 +215,21 @@ export default function AdminPage() {
               {quality.score_band_performance?.length ? (
                 <div className="mt-14">
                   <h4 className="muted" style={{ marginBottom: 6 }}>Score band vs outcome</h4>
-                  <table>
-                    <thead><tr><th>Band</th><th>Decided</th><th>Won</th><th>Win rate</th></tr></thead>
-                    <tbody>
-                      {quality.score_band_performance.map((b) => (
-                        <tr key={b.band}>
-                          <td>{b.band}</td>
-                          <td>{b.decided}</td>
-                          <td>{b.wins}</td>
-                          <td>{b.decided ? `${Math.round(b.win_rate * 100)}%` : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Band</th><th>Decided</th><th>Won</th><th>Win rate</th></tr></thead>
+                      <tbody>
+                        {quality.score_band_performance.map((b) => (
+                          <tr key={b.band}>
+                            <td data-label="Band">{b.band}</td>
+                            <td data-label="Decided">{b.decided}</td>
+                            <td data-label="Won">{b.wins}</td>
+                            <td data-label="Win rate">{b.decided ? `${Math.round(b.win_rate * 100)}%` : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : null}
               {quality.loss_reasons?.length ? (
@@ -266,10 +268,10 @@ export default function AdminPage() {
                   <tbody>
                     {Object.entries(evaluation.fields || {}).map(([field, d]) => (
                       <tr key={field}>
-                        <td>{field}</td>
-                        <td>{pct(d.precision)}</td>
-                        <td>{pct(d.recall)}</td>
-                        <td>{pct(d.f1)}</td>
+                        <td data-label="Field">{field}</td>
+                        <td data-label="Precision">{pct(d.precision)}</td>
+                        <td data-label="Recall">{pct(d.recall)}</td>
+                        <td data-label="F1">{pct(d.f1)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -293,10 +295,10 @@ export default function AdminPage() {
               <tbody>
                 {audit.map((a) => (
                   <tr key={a.id}>
-                    <td>{fmtDateTime(a.created_at)}</td>
-                    <td>{a.actor}</td>
-                    <td>{a.action}{a.opportunity_id ? ` #${a.opportunity_id}` : ""}</td>
-                    <td className="muted">{a.detail ? JSON.stringify(a.detail).slice(0, 140) : ""}</td>
+                    <td data-label="When">{fmtDateTime(a.created_at)}</td>
+                    <td data-label="Actor">{a.actor}</td>
+                    <td data-label="Action">{a.action}{a.opportunity_id ? ` #${a.opportunity_id}` : ""}</td>
+                    <td data-label="Detail" className="muted">{a.detail ? JSON.stringify(a.detail).slice(0, 140) : ""}</td>
                   </tr>
                 ))}
               </tbody>

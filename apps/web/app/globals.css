@@ -11,6 +11,8 @@
   --amber: #b97c0e;
   --red: #c0392b;
   --blue: #1d6fd8;
+  --sidebar-w: 248px;
+  --appbar-h: 54px;
 }
 
 * { box-sizing: border-box; }
@@ -22,12 +24,57 @@ html, body {
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
   font-size: 14px;
+  -webkit-text-size-adjust: 100%;
 }
+
+img, svg, video, canvas { max-width: 100%; }
 
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-.layout { display: flex; min-height: 100vh; }
+.layout { display: flex; min-height: 100vh; min-height: 100dvh; }
+
+/* --- Mobile app bar (hidden on tablet and desktop) --- */
+.appbar { display: none; }
+
+.appbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f2f9fb;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.appbar-toggle:hover { background: rgba(255, 255, 255, 0.12); }
+.appbar-toggle svg { width: 20px; height: 20px; }
+
+.appbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 15px;
+  letter-spacing: 0.4px;
+}
+.appbar-brand img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #153e4b;
+  flex: 0 0 auto;
+}
+.appbar-brand strong { color: #f2f9fb; font-weight: 700; }
+.appbar-brand span { color: #2f93d8; font-weight: 600; }
+
+/* --- Dim layer behind the mobile drawer --- */
+.scrim { display: none; }
 
 /* --- AHTE ERP branded sidebar (deep teal-navy, amber accent) --- */
 .sidebar {
@@ -41,7 +88,7 @@ a:hover { text-decoration: underline; }
   --side-panel: rgba(255, 255, 255, 0.04);
   --side-border: rgba(255, 255, 255, 0.08);
 
-  width: 248px;
+  width: var(--sidebar-w);
   background: linear-gradient(180deg, var(--side-bg-top) 0%, var(--side-bg-bottom) 100%);
   color: var(--side-text);
   display: flex;
@@ -49,6 +96,7 @@ a:hover { text-decoration: underline; }
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   flex-shrink: 0;
 }
 
@@ -59,6 +107,7 @@ a:hover { text-decoration: underline; }
   padding: 22px 16px 18px;
   border-bottom: 1px solid var(--side-border);
   text-align: center;
+  position: relative;
 }
 .sidebar .brand-mark {
   width: 72px;
@@ -94,6 +143,25 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
+/* Close control only exists in the mobile drawer */
+.sidebar-close {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--side-text-strong);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sidebar-close:hover { background: rgba(255, 255, 255, 0.12); }
+
 .sidebar nav { padding: 14px 10px; flex: 1; overflow-y: auto; }
 .sidebar nav a {
   position: relative;
@@ -128,6 +196,7 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--side-border);
   font-size: 12px;
   color: var(--side-text-dim);
+  overflow-wrap: break-word;
 }
 .sidebar .userbox strong { display: block; color: var(--side-text-strong); font-size: 13px; }
 .sidebar .userbox button {
@@ -167,9 +236,14 @@ a:hover { text-decoration: underline; }
   color: var(--side-text-dim);
 }
 
-.main { flex: 1; padding: 22px 26px 60px; min-width: 0; }
+.main {
+  flex: 1;
+  padding: 22px 26px 60px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
 
-h2.page-title { margin: 0 0 4px; font-size: 20px; }
+h2.page-title { margin: 0 0 4px; font-size: 20px; overflow-wrap: anywhere; }
 p.page-sub { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
 
 .grid { display: grid; gap: 14px; }
@@ -177,29 +251,39 @@ p.page-sub { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-@media (max-width: 1100px) {
-  .grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 760px) {
-  .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
-}
-
 .card {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px 16px;
+  min-width: 0;
 }
 .card h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .card .metric { font-size: 26px; font-weight: 650; }
 .card .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
 
 table { width: 100%; border-collapse: collapse; background: var(--card); }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+th, td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: top;
+  /* "anywhere" also shrinks the min-content width, so one long JSON cell
+     cannot force the whole table wider than its card */
+  overflow-wrap: anywhere;
+}
 th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
 tr:hover td { background: #f7f9fc; }
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+/* a table inside a card should scroll, not paint a second frame inside the first */
+.card .table-wrap { border: none; border-radius: 0; background: transparent; }
 
 .badge {
   display: inline-block;
@@ -226,8 +310,9 @@ tr:hover td { background: #f7f9fc; }
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
+  text-align: center;
 }
-.btn:hover { background: #f2f5fa; }
+.btn:hover { background: #f2f5fa; text-decoration: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: #1a62c0; }
 .btn.danger { background: #fff; border-color: #e5b4ad; color: var(--red); }
@@ -252,7 +337,17 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
 .filters > div { min-width: 140px; }
 .filters .grow { flex: 1; min-width: 220px; }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 18px 0 14px; flex-wrap: wrap; }
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: 18px 0 14px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
   background: transparent;
   border: none;
@@ -261,6 +356,8 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
   color: var(--muted);
   cursor: pointer;
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .tabs button.active { color: var(--navy); font-weight: 600; border-bottom-color: var(--accent); }
 
@@ -288,13 +385,16 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
 
 .login-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px 16px;
   background: linear-gradient(160deg, var(--navy) 0%, #1c3c5e 100%);
 }
 .login-card {
   width: 380px;
+  max-width: 100%;
   background: #fff;
   border-radius: 10px;
   padding: 28px;
@@ -305,7 +405,7 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
 .demo-users { margin-top: 16px; font-size: 12px; color: var(--muted); }
 .demo-users button {
   margin: 3px 4px 0 0;
-  padding: 3px 8px;
+  padding: 5px 9px;
   font-size: 11.5px;
   border: 1px solid var(--line);
   background: #f7f9fc;
@@ -331,9 +431,207 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
 .checklist-item { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .checklist-item:last-child { border-bottom: none; }
 
-.section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .section-title h3 { margin: 0; }
 
 .muted { color: var(--muted); font-size: 12.5px; }
 .mt-14 { margin-top: 14px; }
 .mb-14 { margin-bottom: 14px; }
+
+/* ==========================================================================
+   Tablet and phone — up to 1279px
+   The sidebar becomes an off-canvas drawer so narrower screens get the full
+   width for their tables and forms. Layout density tightens further on
+   phones, where tables also stack into cards.
+   ========================================================================== */
+@media (max-width: 1279px) {
+  .layout { display: block; }
+
+  /* --- app bar --- */
+  .appbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    padding: 8px 14px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    background: #0a2c38;
+    color: #f2f9fb;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(4, 18, 25, 0.58);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* --- drawer --- */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    width: 280px;
+    max-width: 84vw;
+    height: 100vh;
+    height: 100dvh;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.24s ease, visibility 0.24s ease;
+    box-shadow: 0 0 48px rgba(0, 0, 0, 0.45);
+  }
+  .sidebar.open { transform: translateX(0); visibility: visible; }
+  .sidebar-close { display: block; }
+
+  .sidebar nav a { padding: 12px 12px; font-size: 14px; }
+
+  .main { padding: 20px 20px 56px; }
+
+  /* --- roomier tap targets --- */
+  .btn { padding: 9px 14px; }
+  .btn.small { padding: 6px 11px; }
+  input, select { min-height: 40px; }
+  .tabs button { padding: 9px 13px; }
+}
+
+/* --- narrow desktop / tablet: two dense table cards never fit side by side --- */
+@media (max-width: 1023px) {
+  .grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.cols-2 { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   Phone — up to 767px
+   Tables stack into cards, forms go full width and every control grows to
+   a comfortable tap size.
+   ========================================================================== */
+@media (max-width: 767px) {
+  .main { padding: 16px 14px calc(48px + env(safe-area-inset-bottom)); }
+
+  h2.page-title { font-size: 18px; }
+  p.page-sub { font-size: 12.5px; margin-bottom: 14px; }
+
+  .card { padding: 12px 13px; }
+  .card .metric { font-size: 22px; }
+  .grid { gap: 12px; }
+  .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
+
+  /* --- tables become stacked cards --- */
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    background: transparent;
+  }
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  tbody tr {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  tbody tr:last-child { margin-bottom: 0; }
+  tbody tr:hover td { background: transparent; }
+  tbody td {
+    display: block;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eef1f6;
+    text-align: left;
+    /* "anywhere" (not "break-word") so long tokens also shrink the min-content
+       width - otherwise one long JSON string widens the whole card */
+    overflow-wrap: anywhere;
+  }
+  tbody td:last-child { border-bottom: none; }
+  tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  tbody td[data-label=""]::before { display: none; }
+
+  .table-wrap {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  /* --- filters and inline forms go full width --- */
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .filters > div { min-width: 0; width: 100%; }
+  .filters .grow { min-width: 0; }
+  .filters .btn { width: 100%; }
+
+  .inline-form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .inline-form > div { min-width: 0; width: 100%; }
+  .inline-form .wide { min-width: 0; }
+  .inline-form .btn { width: 100%; }
+
+  .row-actions { gap: 8px; }
+  .row-actions .btn { flex: 1 1 auto; }
+
+  /* --- key/value lists stack --- */
+  .kv { grid-template-columns: 1fr; gap: 0; }
+  .kv dt {
+    margin-top: 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .kv dt:first-child { margin-top: 0; }
+  .kv dd { margin: 2px 0 0; }
+
+  /* --- checklist rows stack --- */
+  .checklist-item { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .checklist-item .btn { width: 100%; }
+
+  /* --- touch targets --- */
+  .btn { min-height: 42px; padding: 9px 14px; }
+  .btn.small { min-height: 36px; padding: 6px 11px; }
+  /* 16px stops iOS Safari zooming in when a field is focused */
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  textarea { min-height: 110px; }
+  .demo-users button { min-height: 34px; padding: 6px 10px; }
+
+  .section-card textarea { min-height: 140px; }
+
+  .tabs { margin: 14px 0 12px; }
+  .tabs button { padding: 9px 12px; }
+
+  .login-wrap { padding: 18px 14px; align-items: flex-start; }
+  .login-card { padding: 22px 18px; }
+}
+

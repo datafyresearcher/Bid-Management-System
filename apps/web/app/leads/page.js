@@ -149,16 +149,16 @@ export default function LeadsPage() {
           <tbody>
             {leads.map((l) => (
               <tr key={l.id}>
-                <td>
+                <td data-label="Signal">
                   {l.title.slice(0, 90)}
                   <div className="muted">{l.source_code} · {l.source_label}</div>
                 </td>
-                <td>{l.buyer}</td>
-                <td>{l.area}</td>
-                <td>{l.expected_window || "—"}</td>
-                <td>{fmtMoney(l.estimated_value, l.currency)}</td>
-                <td>{l.confidence_tier}<div className="muted">{l.confidence_note}</div></td>
-                <td>
+                <td data-label="Buyer">{l.buyer}</td>
+                <td data-label="Area">{l.area}</td>
+                <td data-label="Window">{l.expected_window || "—"}</td>
+                <td data-label="Value">{fmtMoney(l.estimated_value, l.currency)}</td>
+                <td data-label="Confidence">{l.confidence_tier}<div className="muted">{l.confidence_note}</div></td>
+                <td data-label="Status">
                   <select
                     value={l.status}
                     disabled={busy || l.status === "Converted"}
@@ -167,7 +167,7 @@ export default function LeadsPage() {
                     {["Signal", "Qualified", "Tracking", "Converted", "Dropped"].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
-                <td>
+                <td data-label="">
                   <div className="row-actions">
                     {l.status !== "Converted" ? (
                       <button className="btn small primary" disabled={busy} onClick={() => convert(l)}>Convert & score</button>
@@ -178,7 +178,7 @@ export default function LeadsPage() {
                 </td>
               </tr>
             ))}
-            {leads.length === 0 ? <tr><td colSpan="8" className="muted">No leads.</td></tr> : null}
+            {leads.length === 0 ? <tr><td colSpan="8" data-label="" className="muted">No leads.</td></tr> : null}
           </tbody>
         </table>
       </div>

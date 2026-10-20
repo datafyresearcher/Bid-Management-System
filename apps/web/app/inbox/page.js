@@ -109,23 +109,23 @@ export default function InboxPage() {
           <tbody>
             {items.map((o) => (
               <tr key={o.id}>
-                <td>
+                <td data-label="Score">
                   <span className={`score-pill ${o.score_total >= 70 ? "score-good" : o.score_total >= 55 ? "score-mid" : "score-low"}`}>
                     {o.score_total !== null && o.score_total !== undefined ? Math.round(o.score_total) : "—"}
                   </span>
                 </td>
-                <td>
+                <td data-label="Tender">
                   <Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 90)}</Link>
                   <div className="muted">{o.buyer_name} {o.buyer_ref ? `· ${o.buyer_ref}` : ""}</div>
                   {o.hard_gate_result && !o.hard_gate_result.passed && o.hard_gate_result.failures && o.hard_gate_result.failures.length ? (
                     <div className="muted">Gate failed: {o.hard_gate_result.failures.map((f) => f.reason).join("; ")}</div>
                   ) : null}
                 </td>
-                <td>{o.category_internal}<div className="muted">{o.tender_type}</div></td>
-                <td>{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></td>
-                <td>{fmtDate(o.submission_deadline)}</td>
-                <td><span className={stateClass(o.state)}>{o.state}</span></td>
-                <td>
+                <td data-label="Category">{o.category_internal}<div className="muted">{o.tender_type}</div></td>
+                <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></td>
+                <td data-label="Deadline">{fmtDate(o.submission_deadline)}</td>
+                <td data-label="State"><span className={stateClass(o.state)}>{o.state}</span></td>
+                <td data-label="">
                   <div className="row-actions">
                     {o.state === "NORMALIZED" ? (
                       <button className="btn small primary" disabled={busy} onClick={() => score(o.id)}>Score</button>
@@ -139,7 +139,7 @@ export default function InboxPage() {
               </tr>
             ))}
             {items.length === 0 ? (
-              <tr><td colSpan="7" className="muted">No opportunities match the filter.</td></tr>
+              <tr><td colSpan="7" data-label="" className="muted">No opportunities match the filter.</td></tr>
             ) : null}
           </tbody>
         </table>

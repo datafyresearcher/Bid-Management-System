@@ -263,9 +263,9 @@ export default function OpportunityPage() {
                   <tbody>
                     {opp.compliance.map((c) => (
                       <tr key={c.id}>
-                        <td>{c.requirement.slice(0, 120)}<div className="muted">{c.category}</div></td>
-                        <td>{c.evidence_ref || c.evidence_type}</td>
-                        <td><span className="badge">{c.status}</span></td>
+                        <td data-label="Requirement">{c.requirement.slice(0, 120)}<div className="muted">{c.category}</div></td>
+                        <td data-label="Evidence">{c.evidence_ref || c.evidence_type}</td>
+                        <td data-label="Status"><span className="badge">{c.status}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -294,14 +294,14 @@ export default function OpportunityPage() {
               <tbody>
                 {opp.documents.map((doc) => (
                   <tr key={doc.id}>
-                    <td>{doc.filename}</td>
-                    <td>{doc.doc_type}</td>
-                    <td>{Math.round((doc.size || 0) / 1024)} KB</td>
-                    <td>{doc.parsed ? "yes" : `no — ${doc.parse_status || ""}`}</td>
-                    <td>{fmtDate(doc.created_at)}</td>
+                    <td data-label="File">{doc.filename}</td>
+                    <td data-label="Type">{doc.doc_type}</td>
+                    <td data-label="Size">{Math.round((doc.size || 0) / 1024)} KB</td>
+                    <td data-label="Parsed">{doc.parsed ? "yes" : `no — ${doc.parse_status || ""}`}</td>
+                    <td data-label="Uploaded">{fmtDate(doc.created_at)}</td>
                   </tr>
                 ))}
-                {opp.documents.length === 0 ? <tr><td colSpan="5" className="muted">No documents yet.</td></tr> : null}
+                {opp.documents.length === 0 ? <tr><td colSpan="5" data-label="" className="muted">No documents yet.</td></tr> : null}
               </tbody>
             </table>
           </div>

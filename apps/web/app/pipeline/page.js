@@ -96,14 +96,14 @@ export default function PipelinePage() {
                   const d = daysTo(o.submission_deadline);
                   return (
                     <tr key={o.id}>
-                      <td><Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 90)}</Link></td>
-                      <td>{o.buyer_name}<div className="muted">{o.area}</div></td>
-                      <td>{fmtMoney(o.estimated_value, o.currency)}</td>
-                      <td className={d !== null && d <= 7 ? "score-mid" : ""}>
+                      <td data-label="Tender"><Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 90)}</Link></td>
+                      <td data-label="Buyer">{o.buyer_name}<div className="muted">{o.area}</div></td>
+                      <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}</td>
+                      <td data-label="Deadline" className={d !== null && d <= 7 ? "score-mid" : ""}>
                         {fmtDate(o.submission_deadline)}
                         {d !== null ? <div className="muted">{d}d left</div> : null}
                       </td>
-                      <td>{o.score_total !== null && o.score_total !== undefined ? Math.round(o.score_total) : "—"}</td>
+                      <td data-label="Score">{o.score_total !== null && o.score_total !== undefined ? Math.round(o.score_total) : "—"}</td>
                     </tr>
                   );
                 })}

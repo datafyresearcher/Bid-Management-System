@@ -92,6 +92,7 @@ export default function Shell({ children }) {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (pathname === "/login") {
@@ -111,6 +112,26 @@ export default function Shell({ children }) {
       })
       .catch(() => {});
   }, [pathname, router]);
+
+  // Navigating always closes the mobile drawer.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // While the drawer is open: Escape closes it and the page behind it does not scroll.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [menuOpen]);
 
   if (pathname === "/login") {
     return <>{children}</>;
@@ -133,8 +154,34 @@ export default function Shell({ children }) {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <header className="appbar">
+        <button
+          className="appbar-toggle"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Open navigation"
+          aria-expanded={menuOpen}
+          aria-controls="primary-nav"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+        <span className="appbar-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/ahte-logo.png" alt="" width="26" height="26" />
+          <span>
+            <strong>AHTE</strong> <span>BMS</span>
+          </span>
+        </span>
+      </header>
+
+      {menuOpen ? <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" /> : null}
+
+      <aside className={menuOpen ? "sidebar open" : "sidebar"} id="primary-nav">
         <div className="brand">
+          <button className="sidebar-close" onClick={() => setMenuOpen(false)} aria-label="Close navigation">
+            ×
+          </button>
           <div className="brand-mark">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/ahte-logo.png" alt="AHTE" width="52" height="52" />
@@ -146,7 +193,7 @@ export default function Shell({ children }) {
           <span className="brand-tagline">{APP_TAGLINE}</span>
         </div>
 
-        <nav>
+        <nav aria-label="Primary">
           {NAV.filter(([href]) => href !== "/admin" || (user && user.role === "admin")).map(([href, label, icon]) => {
             const active = pathname === href || (href !== "/" && pathname.startsWith(href));
             return (
