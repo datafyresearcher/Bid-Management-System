@@ -19,7 +19,7 @@ def clean_sources(db):
     for source in db.query(Source).all():
         source.health = "ok"
         source.last_scan_at = utcnow()
-        source.last_scan_stats = None
+        source.last_scan_stats = {"mode": "live", "notices": 10}
     db.commit()
     yield
 
@@ -102,6 +102,9 @@ def test_the_dashboard_names_a_portal_that_cannot_be_reached(client, db, auth):
     assert "PPRA Punjab" in " ".join(feed["unreachable_names"])
     # A portal that could not be read is not also counted as merely unread.
     assert feed["portals_never_read"] == 0
+    # And it is not counted as read either: the banner would otherwise say
+    # "5 of 5 portals were read" and then say one could not be reached.
+    assert feed["portals_read_live"] == feed["portals_total"] - 1
 
 
 def test_a_portal_that_failed_for_another_reason_is_not_called_unreachable(client, db, auth):

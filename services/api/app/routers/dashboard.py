@@ -97,8 +97,13 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
     # it rather than only announcing which mode is switched on. A system set
     # to read live portals has not read anything until a portal has answered.
     portals = [s for s in sources if s.type == "portal"]
-    read_live = [s for s in portals if (s.last_scan_stats or {}).get("mode") == "live"]
     failed = [s for s in portals if s.health == "error"]
+    # A portal that was read from the live site is one that answered. A portal
+    # whose last read failed was not read, whatever mode the attempt was in.
+    read_live = [
+        s for s in portals
+        if (s.last_scan_stats or {}).get("mode") == "live" and s.health != "error"
+    ]
     never_read = [s for s in portals if not s.last_scan_at]
     last_scan = max((s.last_scan_at for s in portals if s.last_scan_at), default=None)
     # A portal this host cannot reach at all is not the same thing as one that
