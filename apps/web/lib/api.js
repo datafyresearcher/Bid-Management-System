@@ -74,6 +74,39 @@ export function fmtDateTime(value) {
   return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
+/**
+ * The bare host of a URL.
+ *
+ * Source links point at government portals, and the host is the part that
+ * tells a reader whether the link really goes to the authority that
+ * publishes the tender — the path and query are noise at a glance.
+ */
+export function urlHost(url) {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Host plus path.
+ *
+ * A portal home page and the listing page inside it share a domain, so the
+ * host alone makes two different destinations look identical. Keeping the
+ * path shows which page on the authority's site the link actually opens.
+ */
+export function urlHostPath(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 export function daysTo(value) {
   if (!value) return null;
   const d = new Date(value);

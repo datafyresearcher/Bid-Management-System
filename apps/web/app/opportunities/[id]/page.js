@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   api, daysTo, DECISIONS, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, stateClass,
 } from "../../../lib/api";
+import { tierClass } from "../../../components/SourceTag";
 
 export default function OpportunityPage() {
   const params = useParams();
@@ -187,6 +188,32 @@ export default function OpportunityPage() {
               <dt>Documents</dt><dd>{opp.documents_status}</dd>
               <dt>Submission mode</dt><dd>{opp.submission_mode}</dd>
             </dl>
+            {opp.source ? (
+              <>
+                <label>Source</label>
+                <div className="src-detail">
+                  <div className="src-line">
+                    <span className="badge badge-blue">{opp.source.name || opp.source.code}</span>
+                    {opp.source.tier ? <span className={tierClass(opp.source.tier)}>Tier {opp.source.tier}</span> : null}
+                  </div>
+                  <dl className="kv">
+                    <dt>Published by</dt><dd>{opp.source.authority || "—"}</dd>
+                    <dt>Reference</dt><dd>{opp.source.reference || "—"}</dd>
+                    <dt>Access</dt><dd>{opp.source.access || "—"}</dd>
+                    <dt>Last scanned</dt><dd>{opp.source.last_scan_at ? fmtDateTime(opp.source.last_scan_at) : "never"}</dd>
+                  </dl>
+                  {opp.source.notice_url ? (
+                    <a className="src-link" href={opp.source.notice_url} target="_blank" rel="noreferrer noopener">
+                      Open the notice on the source portal ↗
+                    </a>
+                  ) : opp.source.portal_url ? (
+                    <a className="src-link" href={opp.source.portal_url} target="_blank" rel="noreferrer noopener">
+                      Open the source portal ↗
+                    </a>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
             {opp.description ? <><label>Description</label><p className="muted">{opp.description}</p></> : null}
           </div>
           <div>

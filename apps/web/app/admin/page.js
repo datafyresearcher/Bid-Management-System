@@ -298,7 +298,7 @@ export default function AdminPage() {
                     <td data-label="When">{fmtDateTime(a.created_at)}</td>
                     <td data-label="Actor">{a.actor}</td>
                     <td data-label="Action">{a.action}{a.opportunity_id ? ` #${a.opportunity_id}` : ""}</td>
-                    <td data-label="Detail" className="muted">{a.detail ? JSON.stringify(a.detail).slice(0, 140) : ""}</td>
+                    <td data-label="Detail" className="muted long-value">{a.detail ? JSON.stringify(a.detail).slice(0, 140) : ""}</td>
                   </tr>
                 ))}
               </tbody>

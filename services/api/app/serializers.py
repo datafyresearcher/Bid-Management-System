@@ -40,6 +40,7 @@ def gate_task(g, include_opportunity=True):
             "state": g.opportunity.state,
             "submission_deadline": iso(g.opportunity.submission_deadline),
             "score_total": g.opportunity.score_total,
+            "source": source_attribution(g.opportunity),
         }
     return data
 
@@ -72,6 +73,7 @@ def opportunity_brief(o):
         "documents_status": o.documents_status,
         "notice_status": o.notice_status,
         "source_refs": o.source_refs or [],
+        "source": source_attribution(o),
         "lead_id": o.lead_id,
         "abandoned_reason": o.abandoned_reason,
         "created_at": iso(o.created_at),
@@ -198,12 +200,63 @@ def source(s):
         "type": s.type,
         "adapter": s.adapter,
         "url": s.url,
+        # Provenance — who publishes this data and how we are allowed to read it.
+        "authority": s.authority,
+        "tier": s.tier,
+        "access": s.access,
+        "listing_url": s.listing_url,
         "schedule_hours": s.schedule_hours,
         "enabled": s.enabled,
         "approved": s.approved,
         "health": s.health,
         "last_scan_at": iso(s.last_scan_at),
         "last_scan_stats": s.last_scan_stats,
+    }
+
+
+def source_attribution(o):
+    """Where a single record came from, ready to show to the user.
+
+    Combines the source registry row (authority, official URL) with the
+    per-notice reference captured from the portal, so a reader can trace a
+    tender back to the publication it was taken from.
+    """
+    refs = [r for r in (o.source_refs or []) if isinstance(r, dict)]
+    src = getattr(o, "source", None)
+    if not refs and src is None:
+        return None
+
+    primary = refs[0] if refs else {}
+    notice_url = primary.get("url") or ""
+    reference = primary.get("native_id") or ""
+    portal_url = src.url if src else ""
+    listing_url = src.listing_url if src else ""
+
+    extra = []
+    for ref in refs[1:]:
+        extra.append(
+            {
+                "reference": ref.get("native_id") or "",
+                "notice_url": ref.get("url") or "",
+                "source_code": ref.get("source_code") or "",
+            }
+        )
+
+    return {
+        "code": primary.get("source_code") or (src.code if src else ""),
+        "name": src.name if src else "",
+        "authority": src.authority if src else "",
+        "tier": src.tier if src else "",
+        "access": src.access if src else "",
+        "type": src.type if src else "",
+        "health": src.health if src else "",
+        "portal_url": portal_url,
+        "listing_url": listing_url,
+        "notice_url": notice_url,
+        "reference": reference,
+        "last_scan_at": iso(src.last_scan_at) if src else None,
+        "scan_mode": (src.last_scan_stats or {}).get("mode", "") if src else "",
+        "additional_refs": extra,
     }
 
 

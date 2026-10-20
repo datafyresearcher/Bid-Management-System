@@ -6,9 +6,27 @@ from app.config import fixtures_dir
 from app.models import Lead, Opportunity
 from app.services import audit, notifications
 from app.services.normalizer import build_dedup_key, classify_category
-from app.services.utils import detect_currency, normalize_key, parse_date, value_band
+from app.services.utils import detect_currency, normalize_key, parse_date, source_id_for_code, value_band
 
 LEAD_STATUSES = ["Signal", "Qualified", "Tracking", "Converted", "Dropped"]
+
+# A lead carries either a source registry code (email_plan) or a confidence
+# tier (L1/L2/L9). Tier codes describe how sure we are, not where the signal
+# came from, so they are mapped onto the registry row that actually published
+# the signal.
+LEAD_SOURCE_CODES = {
+    "L1": "annual_plan",
+    "L2": "annual_plan",
+    "L9": "manual",
+}
+
+
+def lead_source_code(lead) -> str:
+    """Registry source code for a lead."""
+    code = (lead.source_code or "").strip()
+    if code in ("email_plan", "annual_plan", "manual"):
+        return code
+    return LEAD_SOURCE_CODES.get(code, "manual")
 
 
 def import_fixture_leads(db) -> int:
@@ -94,6 +112,7 @@ def convert_to_opportunity(db, lead, actor=None) -> Opportunity:
             return existing
 
     published = parse_date(lead.expected_window) if lead.expected_window else None
+    source_code = lead_source_code(lead)
     opp = Opportunity(
         dedup_key=build_dedup_key(lead.buyer, f"lead-{lead.id}", published),
         country="PK",
@@ -109,7 +128,8 @@ def convert_to_opportunity(db, lead, actor=None) -> Opportunity:
         value_band=value_band(lead.estimated_value, lead.currency or "PKR"),
         state="NORMALIZED",
         source_kind="lead",
-        source_refs=[{"source_code": lead.source_code, "native_id": f"lead-{lead.id}", "url": ""}],
+        source_refs=[{"source_code": source_code, "native_id": f"lead-{lead.id}", "url": ""}],
+        source_id=source_id_for_code(db, source_code),
         lead_id=lead.id,
     )
     db.add(opp)

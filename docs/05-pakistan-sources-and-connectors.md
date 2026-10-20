@@ -108,6 +108,11 @@ compared against the test result.
 | Country / Area | PK / Punjab | Drives filters and taxonomy |
 | Type | Portal / Buyer / Donor / Newspaper / Email | — |
 | Adapter | Template A/B/C or code adapter id | — |
+| **Authority** | "Punjab Procurement Regulatory Authority (PPRA), Government of Punjab" | The body that legally publishes the tender. Shown on the dashboard against every record from this source |
+| **Tier** | `P0` / `P1` / `P2` | Priority from §1. Drives scan cadence and dashboard ordering |
+| **Access** | `public` / `published-document` / `email` / `manual` | How we are entitled to read the data |
+| **Portal URL** | `https://eproc.punjab.gov.pk/` | The authority's own home page. Must be the authority's real domain — never a lookalike |
+| **Listing URL** | `https://eproc.punjab.gov.pk/ActiveTenders.aspx` | The page notices are actually read from. Defaults to the portal URL when a source publishes at one address |
 | Entry URL + pagination pattern | as applicable | Templates only |
 | Selectors / field map | title, dates, ref, attachments | Templates only; validated on Test Fetch |
 | Category mapping | portal category → internal category | Editable table; defaults seeded |
@@ -117,9 +122,24 @@ compared against the test result.
 | Health | ok / degraded / broken + last scan stats | Auto-maintained; alert on transition |
 | Approval | who/when approved | Audit |
 
+**Portal URLs must be verified against the authority's own domain.** A URL that looks official but
+is not — a dead host, a parked domain, or a plausible spelling of a government portal — makes
+every downstream reference untraceable, which is worse than having no link at all. §9 lists the
+domains confirmed live.
+
 What non-technical admins **can** do: add Template A/B/C sources, adjust schedules, edit category
 mappings, enable/disable, run Test Fetch, add email routes.
 What needs engineering: new code adapters, selector work on JS-heavy portals, rate/robots changes.
+
+### 5.1 Record-level provenance
+
+Each opportunity carries a `source_id` pointing at its registry row, plus `source_refs` holding the
+per-notice detail captured from the portal (the authority's own reference number and the URL of
+the notice). The dashboard renders both: the registry row answers "which body publishes this",
+the reference answers "which notice is this".
+
+Records created outside a portal scan — manual entries, converted leads — still resolve to a
+registry row (`manual`, `email_plan`, `annual_plan`) so no record is ever left unattributed.
 
 ---
 
@@ -176,3 +196,50 @@ later requests credential custody with explicit security sign-off).
 | Login walls appearing | Detail fetch redirects to login | Mark `partial`, notify admin |
 
 All health alerts appear in the Admin Console and as a home-dashboard banner; no email (D-03).
+
+---
+
+## 9. Verified official portals
+
+The registry only accepts URLs confirmed live on the authority's own domain. Verified against the
+live portals:
+
+| Registry code | Authority | Portal URL | Notice listing |
+|---------------|-----------|------------|----------------|
+| `ppra_punjab` | Punjab Procurement Regulatory Authority (PPRA), Government of Punjab | `https://eproc.punjab.gov.pk/` | `https://eproc.punjab.gov.pk/ActiveTenders.aspx` |
+| `epms_federal` | Federal Public Procurement Regulatory Authority (PPRA), Government of Pakistan | `https://epms.ppra.gov.pk/` | `https://epms.ppra.gov.pk/public/tenders/active-tenders` |
+| `ntdc` | National Transmission & Despatch Company Limited (NTDC) | `https://ntdc.gov.pk/` | `https://ntdc.gov.pk/tendors` |
+| `wapda` | Pakistan Water and Power Development Authority (WAPDA) | `https://wapda.gov.pk/` | `https://wapda.gov.pk/wapda-tenders/` |
+
+Also live and authoritative, for the next wave of adapters: `https://epads.gov.pk/` (Federal
+EPADS), `https://ppra.punjab.gov.pk/` (PPRA Punjab notices),
+`https://punjab.eprocure.gov.pk/` (EPADS Punjab e-bidding).
+
+### 9.1 Notice links
+
+A notice link must open a real page on the authority's site. Where a portal has no stable
+per-notice URL, link to the listing page with the reference applied as a filter — EPMS accepts
+`?keyword=<reference>`, which searches the live active-tenders list by title or tender number.
+The captured reference number is always shown next to the link, so a reader can find the notice
+whether or not the filtered URL resolves.
+
+### 9.2 Capture mode
+
+The registry records whether a capture came off the live portal or from a saved copy of one
+(`last_scan_stats.mode`: `live` or `saved-capture`). The dashboard banner states this, so a saved
+capture is never presented as a live pull.
+
+---
+
+## 10. Showing provenance to the user
+
+The dashboard answers "where did this come from?" in three places:
+
+1. **A banner** under the page title stating the capture mode and linking to the source register.
+2. **A Source column / tag on every record** — the publishing source, its tier, the reference
+   number captured from the portal, and a link to the notice.
+3. **The "Data sources & provenance" register** — every source with its authority, tier, record
+   count, official portal, notice listing, access mode, last scan and health.
+
+The same attribution block appears on the opportunity detail page, where a reviewer confirms a
+single tender before deciding to bid.

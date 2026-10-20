@@ -1,6 +1,21 @@
 import re
 from datetime import datetime, timezone
 
+
+def source_id_for_code(db, code: str):
+    """Resolve the registry row id for a source code.
+
+    Records created outside a portal scan (manual entries, converted leads)
+    still need to point at a source row so the dashboard can attribute them.
+    """
+    from sqlalchemy import select
+
+    from app.models import Source
+
+    row = db.execute(select(Source).where(Source.code == code)).scalars().first()
+    return row.id if row else None
+
+
 DATE_FORMATS = [
     "%d-%b-%Y",
     "%d %b %Y",

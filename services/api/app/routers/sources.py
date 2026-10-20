@@ -20,6 +20,10 @@ class SourceIn(BaseModel):
     type: str = "portal"
     adapter: str = "fixture_json"
     url: str = ""
+    authority: str = ""
+    tier: str = ""
+    access: str = "public"
+    listing_url: str = ""
     schedule_hours: int = 24
     enabled: bool = True
 
@@ -31,6 +35,10 @@ class SourceUpdateIn(BaseModel):
     type: str | None = None
     adapter: str | None = None
     url: str | None = None
+    authority: str | None = None
+    tier: str | None = None
+    access: str | None = None
+    listing_url: str | None = None
     schedule_hours: int | None = None
     enabled: bool | None = None
     approved: bool | None = None

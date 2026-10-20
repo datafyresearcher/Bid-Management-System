@@ -10,7 +10,7 @@ from app.models import Opportunity, User
 from app.security import get_current_user, require_roles
 from app.serializers import opportunity_brief, opportunity_detail, outcome as outcome_serializer
 from app.services import audit, documents, scorer, submission, workflow
-from app.services.utils import detect_currency, parse_date, utcnow, value_band
+from app.services.utils import detect_currency, parse_date, source_id_for_code, utcnow, value_band
 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
 
@@ -121,6 +121,7 @@ def create_manual(payload: ManualIn, user: User = Depends(require_roles("bid_man
         source_kind="manual",
         state="NORMALIZED",
         source_refs=[{"source_code": "manual", "native_id": f"manual-{utcnow().isoformat()}", "url": ""}],
+        source_id=source_id_for_code(db, "manual"),
     )
     db.add(opp)
     db.commit()

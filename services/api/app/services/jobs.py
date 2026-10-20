@@ -41,7 +41,14 @@ def run_source(db, source) -> dict:
 
     source.health = "ok"
     source.last_scan_at = utcnow()
-    source.last_scan_stats = {"notices": len(notices), "new": created, "updated": max(0, len(notices) - created)}
+    source.last_scan_stats = {
+        "notices": len(notices),
+        "new": created,
+        "updated": max(0, len(notices) - created),
+        # Be explicit about whether this capture came off the live portal or
+        # from a saved copy of one. The dashboard shows this to the user.
+        "mode": "saved-capture" if connector.fixture_mode else "live",
+    }
     db.commit()
 
     if created:

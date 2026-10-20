@@ -13,6 +13,7 @@ services/api/*.db
 services/api/*.bak
 services/api/storage/
 services/api/exports/
+services/api/*.log
 *.sqlite3
 
 # --- Node / Next.js ---

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, deadlineInfo, fmtDate, fmtMoney, GATE_LABELS, severityClass, slaCountdown, slaIsOverdue, stateClass } from "../lib/api";
+import { api, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
+import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -33,6 +34,14 @@ export default function DashboardPage() {
     <>
       <h2 className="page-title">Dashboard</h2>
       <p className="page-sub">Live view of discovery, screening and gate activity.</p>
+
+      <div className={`notice ${data.feed_mode === "live" ? "ok" : "info"} src-banner`}>
+        <strong>Where this data comes from.</strong>{" "}
+        {data.feed_mode === "live"
+          ? "Connectors are pulling directly from the official portals listed below."
+          : "Connectors are reading saved captures of the official portals listed below — every reference and notice link still points at the authority's own site."}{" "}
+        <a href="#data-sources">See the source register</a>.
+      </div>
 
       <div className="grid cols-4 mb-14">
         <div className="card">
@@ -84,12 +93,13 @@ export default function DashboardPage() {
                             {(g.opportunity && g.opportunity.title) ? g.opportunity.title.slice(0, 70) : `#${g.opportunity_id}`}
                           </Link>
                           {g.opportunity ? <div className="muted">{g.opportunity.buyer_name}</div> : null}
+                          <SourceTag source={g.opportunity?.source} />
                         </td>
-                        <td data-label="Tender closes" className={dl.className}>
+                        <td data-label="Tender closes" className={`nowrap ${dl.className}`}>
                           {dl.label}
                           {dl.days !== null ? <div className="muted">{dl.countdown}</div> : null}
                         </td>
-                        <td data-label="Review SLA" className={slaIsOverdue(g.due_at) ? "score-low" : "muted"}>
+                        <td data-label="Review SLA" className={`nowrap ${slaIsOverdue(g.due_at) ? "score-low" : "muted"}`}>
                           {slaCountdown(g.due_at)}
                           <div className="muted">internal</div>
                         </td>
@@ -122,9 +132,10 @@ export default function DashboardPage() {
                       <td data-label="Tender">
                         <Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 70)}</Link>
                         <div className="muted">{o.buyer_name}</div>
+                        <SourceTag source={o.source} />
                       </td>
-                      <td data-label="Deadline">{fmtDate(o.submission_deadline)}</td>
-                      <td data-label="State"><span className={stateClass(o.state)}>{o.state}</span></td>
+                      <td data-label="Deadline" className="nowrap">{fmtDate(o.submission_deadline)}</td>
+                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{o.state}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -151,13 +162,14 @@ export default function DashboardPage() {
                 <tbody>
                   {data.top_opportunities.map((o) => (
                     <tr key={o.id}>
-                      <td data-label="Score"><span className={`score-pill ${o.score_total >= 70 ? "score-good" : o.score_total >= 55 ? "score-mid" : "score-low"}`}>{Math.round(o.score_total || 0)}</span></td>
+                      <td data-label="Score" className="nowrap"><span className={`score-pill ${o.score_total >= 70 ? "score-good" : o.score_total >= 55 ? "score-mid" : "score-low"}`}>{Math.round(o.score_total || 0)}</span></td>
                       <td data-label="Tender">
                         <Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 65)}</Link>
                         <div className="muted">{o.buyer_name}</div>
+                        <SourceTag source={o.source} />
                       </td>
-                      <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}</td>
-                      <td data-label="State"><span className={stateClass(o.state)}>{o.state}</span></td>
+                      <td data-label="Value" className="nowrap">{fmtMoney(o.estimated_value, o.currency)}</td>
+                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{o.state}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -193,32 +205,69 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid cols-2 mt-14">
-        <div className="card">
-          <h3>Source health</h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Source</th><th>Adapter</th><th>Health</th><th>Last scan</th></tr>
-              </thead>
-              <tbody>
-                {data.sources.map((s) => (
-                  <tr key={s.id}>
-                    <td data-label="Source">{s.name}<div className="muted">{s.code}</div></td>
-                    <td data-label="Adapter">{s.adapter}</td>
-                    <td data-label="Health">
-                      <span className={s.health === "ok" ? "badge badge-green" : s.health === "error" ? "badge badge-red" : "badge badge-gray"}>
-                        {s.health}
-                      </span>
-                    </td>
-                    <td data-label="Last scan">{s.last_scan_at ? fmtDate(s.last_scan_at) : "never"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="card mt-14" id="data-sources">
+        <div className="section-title">
+          <h3>Data sources &amp; provenance</h3>
+          <span className="muted">{data.sources.length} authorized channels</span>
         </div>
+        <p className="muted src-note">
+          Every tender in this system is captured from one of the channels below. Each one is an
+          official publication by the body that owns the tender, or one of our own desks — no
+          aggregator, no scraped mirror. The reference number shown against a record is the one
+          the authority published it under, so it can be traced back to the source.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Tier</th>
+                <th>Records</th>
+                <th>Official portal</th>
+                <th>Notice listing</th>
+                <th>Access</th>
+                <th>Last scan</th>
+                <th>Health</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sources.map((s) => (
+                <tr key={s.id}>
+                  <td data-label="Source">
+                    <strong>{s.name}</strong>
+                    <div className="muted">{s.code}</div>
+                    {s.authority ? <div className="muted src-authority">{s.authority}</div> : null}
+                  </td>
+                  <td data-label="Tier">{s.tier ? <span className={tierClass(s.tier)}>Tier {s.tier}</span> : <span className="muted">—</span>}</td>
+                  <td data-label="Records">{s.records ?? 0}</td>
+                  <td data-label="Official portal">
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noreferrer noopener" className="src-portal">{urlHost(s.url)} ↗</a>
+                    ) : (
+                      <span className="muted">internal desk</span>
+                    )}
+                  </td>
+                  <td data-label="Notice listing">
+                    {s.listing_url ? (
+                      <a href={s.listing_url} target="_blank" rel="noreferrer noopener" className="src-portal">{urlHostPath(s.listing_url)} ↗</a>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td data-label="Access"><span className="badge badge-gray">{s.access || "—"}</span></td>
+                  <td data-label="Last scan">
+                    {s.last_scan_at ? fmtDateTime(s.last_scan_at) : <span className="muted">never</span>}
+                    {s.last_scan_stats?.mode ? <div className="muted">{s.last_scan_stats.mode}</div> : null}
+                  </td>
+                  <td data-label="Health"><span className={sourceHealthClass(s.health)}>{s.health}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
+      <div className="grid cols-2 mt-14">
         <div className="card">
           <h3>AI quality</h3>
           <div className="kv">

@@ -106,10 +106,23 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
     }
 
     if existing:
-        refs = list(existing.source_refs or [])
-        if not any(r.get("source_code") == source.code and r.get("native_id") == source_ref["native_id"] for r in refs):
+        # Copy the refs into fresh dicts. Mutating the loaded dicts in place
+        # would change the old value too, and the update would never be flushed.
+        refs = [dict(r) for r in (existing.source_refs or [])]
+        matched = False
+        for i, r in enumerate(refs):
+            if r.get("source_code") == source.code and r.get("native_id") == source_ref["native_id"]:
+                # Same notice seen again. Keep the stored reference current —
+                # portals move pages and the canonical URL changes over time.
+                if source_ref.get("url") and r.get("url") != source_ref["url"]:
+                    refs[i] = {**r, "url": source_ref["url"]}
+                matched = True
+                break
+        if not matched:
             refs.append(source_ref)
-            existing.source_refs = refs
+        existing.source_refs = refs
+        if existing.source_id is None:
+            existing.source_id = source.id
         db.commit()
         return existing
 
@@ -146,6 +159,7 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         notice_status="Published",
         state="NORMALIZED",
         source_refs=[source_ref],
+        source_id=source.id,
     )
     db.add(opp)
     db.commit()

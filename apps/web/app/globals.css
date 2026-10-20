@@ -269,11 +269,13 @@ th, td {
   border-bottom: 1px solid var(--line);
   font-size: 13px;
   vertical-align: top;
-  /* "anywhere" also shrinks the min-content width, so one long JSON cell
-     cannot force the whole table wider than its card */
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
-th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
+/* A machine-generated value (a JSON blob) is a single unbroken token, so it
+   would otherwise push the whole table wider than its card. That one kind of
+   cell may break anywhere. */
+td.long-value { overflow-wrap: anywhere; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
 tr:hover td { background: #f7f9fc; }
 .table-wrap {
   overflow-x: auto;
@@ -294,6 +296,7 @@ tr:hover td { background: #f7f9fc; }
   background: #e8eef7;
   color: var(--navy);
   white-space: nowrap;
+  overflow-wrap: normal;
 }
 .badge-green { background: #dff3e9; color: var(--green); }
 .badge-amber { background: #fdf1d9; color: var(--amber); }
@@ -311,6 +314,11 @@ tr:hover td { background: #f7f9fc; }
   font-size: 13px;
   cursor: pointer;
   text-align: center;
+  /* a button label is one word - never split it across lines */
+  white-space: nowrap;
+  /* `overflow-wrap` is inherited from the cell, and would otherwise split the
+     label mid-word when the column gets tight. */
+  overflow-wrap: normal;
 }
 .btn:hover { background: #f2f5fa; text-decoration: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -438,6 +446,31 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
 .mt-14 { margin-top: 14px; }
 .mb-14 { margin-bottom: 14px; }
 
+/* Value columns — deadlines, countdowns, badges. These are short by nature,
+   and letting them wrap mid-word makes a dense table hard to scan. */
+.nowrap { white-space: nowrap; }
+
+/* ==========================================================================
+   Provenance — how a record is traced back to the portal that published it
+   ========================================================================== */
+.src-banner { margin-bottom: 14px; }
+.src-banner a { font-weight: 600; text-decoration: underline; }
+
+.src-tag { margin-top: 5px; display: flex; flex-direction: column; gap: 3px; }
+.src-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.src-ref { display: flex; flex-direction: row; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; line-height: 1.35; color: var(--muted); font-size: 12.5px; }
+.src-refno { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+.src-authority { font-size: 11.5px; }
+.src-link { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.src-note { margin: 0 0 12px; max-width: 78ch; }
+.src-portal { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.src-detail { margin-top: 4px; }
+.src-detail .kv { margin-top: 6px; }
+
+@media (max-width: 1279px) {
+  .src-portal { white-space: normal; word-break: break-all; }
+}
+
 /* ==========================================================================
    Tablet and phone — up to 1279px
    The sidebar becomes an off-canvas drawer so narrower screens get the full
@@ -556,10 +589,9 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
     padding: 8px 12px;
     border-bottom: 1px solid #eef1f6;
     text-align: left;
-    /* "anywhere" (not "break-word") so long tokens also shrink the min-content
-       width - otherwise one long JSON string widens the whole card */
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
+  tbody td.long-value { overflow-wrap: anywhere; }
   tbody td:last-child { border-bottom: none; }
   tbody td::before {
     content: attr(data-label);

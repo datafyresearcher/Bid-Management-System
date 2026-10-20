@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import GateTask, NotificationEvent, Opportunity, Source, User
 from app.security import get_current_user
@@ -76,6 +77,21 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
 
     sources = db.execute(select(Source).order_by(Source.code)).scalars().all()
 
+    # How many records each source actually contributed. This is what makes the
+    # source panel auditable rather than decorative.
+    record_counts = dict(
+        db.execute(
+            select(Opportunity.source_id, func.count(Opportunity.id))
+            .where(Opportunity.source_id != None)  # noqa: E711
+            .group_by(Opportunity.source_id)
+        ).all()
+    )
+    source_rows = []
+    for s in sources:
+        row = source(s)
+        row["records"] = record_counts.get(s.id, 0)
+        source_rows.append(row)
+
     return {
         "state_counts": state_counts,
         "active_count": active_count,
@@ -86,7 +102,11 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "notifications": [notification(n) for n in notifications_rows],
         "closing_soon": [opportunity_brief(o) for o in closing],
         "top_opportunities": [opportunity_brief(o) for o in top],
-        "sources": [source(s) for s in sources],
+        "sources": source_rows,
+        # Whether the connectors are pulling from the live portals or from
+        # saved captures of them. Surfaced so nobody mistakes a capture for a
+        # live pull.
+        "feed_mode": "saved-capture" if settings.fixtures else "live",
         "ai_quality": ai_quality.summary(db),
     }
 

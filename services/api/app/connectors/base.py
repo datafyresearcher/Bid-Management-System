@@ -7,7 +7,9 @@ class BaseConnector:
 
     def __init__(self, source):
         self.source = source
-        self.base_url = (source.url or "").rstrip("/")
+        # Notices are read from the authority's listing page; the portal home
+        # page is only the fallback for sources that publish at a single URL.
+        self.base_url = (getattr(source, "listing_url", "") or source.url or "").rstrip("/")
         self.fixture_mode = settings.fixtures
         self.last_raw = None
 

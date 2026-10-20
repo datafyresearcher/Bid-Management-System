@@ -41,6 +41,13 @@ ADDED_COLUMNS = {
     "opportunities": [
         ("ai_confidence", "FLOAT"),
         ("extraction_grade", "VARCHAR(20) DEFAULT ''"),
+        ("source_id", "INTEGER"),
+    ],
+    "sources": [
+        ("authority", "VARCHAR(250) DEFAULT ''"),
+        ("tier", "VARCHAR(8) DEFAULT ''"),
+        ("access", "VARCHAR(40) DEFAULT 'public'"),
+        ("listing_url", "VARCHAR(500) DEFAULT ''"),
     ],
 }
 
@@ -64,8 +71,77 @@ def migrate_columns():
                 logger.warning("Could not add %s.%s: %s", table, name, exc)
 
 
+def sync_source_registry():
+    """Apply the authorized source registry to the database.
+
+    The registry holds the authoritative portal URLs and the authority behind
+    each one. It is applied on every start, not only during seeding, so a
+    running instance never keeps serving a stale or dead portal link.
+    """
+    from app.source_registry import sync_source_registry as apply_registry
+
+    session = SessionLocal()
+    try:
+        return apply_registry(session)
+    except Exception as exc:
+        logger.warning("Source registry sync skipped: %s", exc)
+        session.rollback()
+        return (0, 0)
+    finally:
+        session.close()
+
+
+def backfill_opportunity_sources():
+    """Point every opportunity at the source registry row it was captured from.
+
+    Records written before the source registry was linked only carry the source
+    code inside the `source_refs` JSON blob. Resolving that to a real row keeps
+    the dashboard attribution truthful without re-scanning any portal.
+    """
+    from sqlalchemy import select
+
+    from app.models import Opportunity, Source
+
+    session = SessionLocal()
+    try:
+        codes = {s.code: s.id for s in session.execute(select(Source)).scalars().all()}
+        if not codes:
+            return 0
+        rows = session.execute(select(Opportunity.id, Opportunity.source_id, Opportunity.source_refs)).all()
+        linked = 0
+        for opp_id, source_id, refs in rows:
+            if source_id or not refs:
+                continue
+            if not isinstance(refs, list) or not refs:
+                continue
+            first = refs[0]
+            if not isinstance(first, dict):
+                continue
+            code = first.get("source_code")
+            if not code or code not in codes:
+                continue
+            opp = session.get(Opportunity, opp_id)
+            if opp is not None:
+                opp.source_id = codes[code]
+                linked += 1
+        if linked:
+            session.commit()
+            logger.info("Backfilled source_id on %s opportunities", linked)
+        return linked
+    except Exception as exc:
+        logger.warning("Opportunity source backfill skipped: %s", exc)
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
 def init_db():
     from app import models
 
     Base.metadata.create_all(bind=engine)
     migrate_columns()
+    # Order matters: the registry must exist before opportunities can be
+    # pointed at a source row.
+    sync_source_registry()
+    backfill_opportunity_sources()

@@ -43,6 +43,14 @@ class Source(Base):
     type = Column(String(40), default="portal")
     adapter = Column(String(80), nullable=False)
     url = Column(String(500), default="")
+    # Provenance. `url` is the authority's own home page; `listing_url` is the
+    # page the notices are actually read from. `authority` names the body that
+    # publishes the tender (the legal source), `tier` is the priority from
+    # docs/05, and `access` records how we are allowed to reach the data.
+    authority = Column(String(250), default="")
+    tier = Column(String(8), default="")
+    access = Column(String(40), default="public")
+    listing_url = Column(String(500), default="")
     schedule_hours = Column(Integer, default=24)
     enabled = Column(Boolean, default=True)
     approved = Column(Boolean, default=True)
@@ -112,6 +120,10 @@ class Opportunity(Base):
     notice_status = Column(String(40), default="Published")
     state = Column(String(40), default="NEW", index=True)
     source_refs = Column(JSON, default=list)
+    # The publishing source this record was captured from. `source_refs` keeps
+    # the raw per-notice detail (reference number, notice URL); this FK is the
+    # registry row the dashboard attributes the record to.
+    source_id = Column(Integer, ForeignKey("sources.id"), index=True)
     lead_id = Column(Integer, ForeignKey("leads.id"))
     score_total = Column(Float)
     hard_gate_result = Column(JSON)
@@ -131,6 +143,7 @@ class Opportunity(Base):
     gate_tasks = relationship("GateTask", backref="opportunity", cascade="all, delete-orphan")
     compliance_items = relationship("ComplianceItem", backref="opportunity", cascade="all, delete-orphan")
     workflow_events = relationship("WorkflowEvent", backref="opportunity", cascade="all, delete-orphan")
+    source = relationship("Source", foreign_keys=[source_id], lazy="joined")
 
 
 class Document(Base):

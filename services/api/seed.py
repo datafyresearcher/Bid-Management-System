@@ -18,6 +18,7 @@ from app.models import (
     User,
 )
 from app.security import hash_password
+from app.source_registry import SOURCES, sync_source_registry
 from app.services import leads as leads_service, scorer
 
 USERS = [
@@ -29,14 +30,8 @@ USERS = [
     ("viewer@ahte.local", "Viewer", "viewer", "view123"),
 ]
 
-SOURCES = [
-    ("ppra_punjab", "PPRA Punjab e-Procurement", "Punjab", "portal", "ppra_punjab", "https://eproc.punjab.gov.pk/", 12),
-    ("epms_federal", "Federal EPMS / EPADS", "Federal", "portal", "epms_federal", "https://epms.gov.pk/", 24),
-    ("ntdc", "NTDC Tenders", "Federal", "portal", "fixture_json", "https://ntdc.gov.pk/tenders", 24),
-    ("wapda", "WAPDA Tenders", "Federal", "portal", "fixture_json", "https://wapda.gov.pk/tenders", 24),
-    ("email_plan", "Email Inbox — Budget Signals", "Punjab", "email", "email_inbox", "", 48),
-    ("manual", "Manual Entries", "", "manual", "fixture_json", "", 0),
-]
+# The authorized source registry lives in app/source_registry.py. It is applied on
+# every application start so a running database never keeps a stale portal URL.
 
 
 def seed_users(db):
@@ -187,26 +182,13 @@ def seed_kb(db):
 
 
 def seed_sources(db):
-    created = 0
-    for code, name, area, type_, adapter, url, schedule in SOURCES:
-        exists = db.execute(select(Source).where(Source.code == code)).scalars().first()
-        if not exists:
-            db.add(
-                Source(
-                    code=code,
-                    name=name,
-                    area=area,
-                    type=type_,
-                    adapter=adapter,
-                    url=url,
-                    schedule_hours=schedule,
-                    enabled=True,
-                    approved=True,
-                )
-            )
-            created += 1
-    db.commit()
-    return created
+    """Apply the authorized source registry to the database.
+
+    Refreshing matters: a registry correction (a portal moved to its real
+    government domain, an authority name was filled in) has to reach databases
+    that were seeded before the correction, not just fresh installs.
+    """
+    return sync_source_registry(db)
 
 
 def seed_mappings(db):
@@ -248,7 +230,7 @@ def main():
         print(f"Users created: {seed_users(db)}")
         kb_seeded = seed_kb(db)
         print(f"KB seeded: {kb_seeded}")
-        print(f"Sources created: {seed_sources(db)}")
+        print(f"Sources: {seed_sources(db)}")
         seed_mappings(db)
         if settings.fixtures:
             run_demo_pipeline(db)
