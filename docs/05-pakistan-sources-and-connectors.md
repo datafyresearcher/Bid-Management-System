@@ -278,12 +278,17 @@ variable:
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `BMS_LIVE_REQUEST_TIMEOUT` | 60 | Seconds allowed for one portal request. These are slow government sites. |
-| `BMS_LIVE_MIN_INTERVAL` | 1.5 | Minimum seconds between two requests to the same portal. |
+| `BMS_LIVE_MIN_INTERVAL` | 3.0 | Minimum seconds between two requests to the same portal. |
 | `BMS_LIVE_RETRIES` | 2 | Retries after a failed request, with exponential backoff. |
 | `BMS_LIVE_MAX_PAGES` | 3 | Listing pages walked per source in one scan. |
-| `BMS_LIVE_MAX_DETAILS` | 15 | Detail pages read per source in one scan. |
+| `BMS_LIVE_MAX_DETAILS` | 2 | Detail pages read per source in one scan. |
+| `BMS_LIVE_SCAN_DEADLINE` | 32 | Seconds a source's read may spend on the network. |
 | `BMS_LIVE_LOOKBACK_DAYS` | 60 | How far back to read a portal that publishes its whole history at once. |
 | `BMS_LIVE_BROWSER_UA` | true | Whether a live read presents a browser User-Agent (see 11.3). |
+
+A read that would run past `BMS_LIVE_SCAN_DEADLINE` stops first, and returns the pages it managed to
+read. That matters on a serverless function, where a read that is cut off halfway through loses
+everything it had gathered.
 
 ### 11.2 What each connector reads
 

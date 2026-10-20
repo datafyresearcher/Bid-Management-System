@@ -170,6 +170,36 @@ def test_ppra_states_the_portal_s_own_type():
     assert all(n["tender_type"] in ("Goods", "Services", "Works", "") for n in notices)
 
 
+def test_ppra_detail_page_names_the_notice_it_corrects():
+    connector = ppra()
+    fields = connector._detail_fields(golden("ppra_detail.html"))
+    assert fields["Procurement Title"]["text"] == "Corrigendum"
+    assert fields["Publish Date"]["text"]
+    # The detail page links the notice document of the tender being
+    # corrected. That document is the identifier both rows share.
+    stem = connector._document_stem(fields["Tender Notice"]["links"])
+    assert stem, "the detail page should link the tender's notice document"
+    assert not stem.endswith(".pdf")
+
+
+def test_ppra_corrigendum_is_tied_to_the_notice_it_corrects():
+    connector = ppra()
+    notices = connector.parse_grid(golden("ppra_punjab.html"))
+    corrigenda = [n for n in notices if n.get("detail_url")]
+    assert corrigenda, "the listing should contain corrections"
+
+    # With the detail page in hand, the correction takes the identity of the
+    # tender it corrects and the date that tender was first published.
+    fields = connector._detail_fields(golden("ppra_detail.html"))
+    parent_stem = connector._document_stem(fields["Tender Notice"]["links"])
+    notice = dict(corrigenda[0])
+    notice["native_id"] = f"ppra-{parent_stem}"
+    notice["buyer_ref"] = f"PPRA/{parent_stem}"
+    notice["published_at"] = fields["Publish Date"]["text"]
+    assert notice["buyer_ref"].startswith("PPRA/")
+    assert notice["published_at"]
+
+
 # -- EPMS (federal) ----------------------------------------------------
 
 

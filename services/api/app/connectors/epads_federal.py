@@ -94,8 +94,14 @@ class EPADSFederalConnector(BaseConnector):
         seen = set()
         page = 1
         while page <= settings.live_max_pages:
+            left, estimate = self.scan_budget()
+            if left < estimate:
+                # Not enough time left for another page. Stop with what has
+                # been read rather than be cut off part way through.
+                break
             url = self.base_url if page == 1 else f"{self.base_url}?page={page}"
             html = client.get(url)
+            self.note_request()
             self.last_raw = html
             page_notices = self.parse_listing(html)
             if not page_notices:

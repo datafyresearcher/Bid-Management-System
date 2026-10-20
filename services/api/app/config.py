@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     live_browser_ua: bool = True
     # Minimum seconds between two requests to the same portal. Public-sector
     # sites are not to be hammered, and the docs ask for one request per 3s.
-    live_min_interval: float = 1.5
+    live_min_interval: float = 3.0
     # How many times a failed request is retried before the source is marked
     # degraded. Zero means a transient blip marks the source unhealthy.
     live_retries: int = 2
@@ -71,7 +71,11 @@ class Settings(BaseSettings):
     live_max_pages: int = 3
     # How many notices per source are enriched with a detail-page read in a
     # single scan. Detail reads are the expensive part, so they are rationed.
-    live_max_details: int = 8
+    live_max_details: int = 2
+    # Seconds a single source's read may spend on the network. A read stops
+    # before this rather than being cut off halfway through, so the scan
+    # returns what it managed to read instead of failing.
+    live_scan_deadline: float = 32.0
     # Only notices published within this many days are taken from a portal
     # that publishes its whole history in one response. Without this a single
     # scan would import thousands of years-old records.

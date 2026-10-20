@@ -154,6 +154,7 @@ class PPRAPunjabConnector(BaseConnector):
 
         client = self.client()
         html = client.get(self.base_url)
+        self.note_request()
         self.last_raw = html
         notices = self.parse_grid(html)
         seen = {n["native_id"] for n in notices}
@@ -165,6 +166,11 @@ class PPRAPunjabConnector(BaseConnector):
         targets = self._pager_targets(html)
         page = 2
         while page <= settings.live_max_pages:
+            left, estimate = self.scan_budget()
+            if left < estimate:
+                # Not enough time left for another page. Stop with what has
+                # been read rather than be cut off part way through.
+                break
             target = targets.get(page)
             if not target:
                 break
@@ -175,6 +181,7 @@ class PPRAPunjabConnector(BaseConnector):
                 html = client.post(self.base_url, payload)
             except Exception:
                 break
+            self.note_request()
             self.last_raw = html
             page_notices = self.parse_grid(html)
             fresh = [n for n in page_notices if n["native_id"] not in seen]
@@ -236,22 +243,28 @@ class PPRAPunjabConnector(BaseConnector):
         for notice in notices:
             if not notice.get("detail_url") or notice.get("_paired") or budget <= 0:
                 continue
+            left, estimate = self.scan_budget()
+            if left < estimate:
+                # The detail pages are the slow ones. Stop while there is
+                # still time for the scan to finish and be recorded.
+                break
             budget -= 1
             try:
                 html = client.get(notice["detail_url"])
             except Exception:
                 continue
+            self.note_request()
             fields = self._detail_fields(html)
-            parent_stem = self._document_stem(fields.get("Tender Notice:", {}).get("links", []))
+            parent_stem = self._document_stem(fields.get("Tender Notice", {}).get("links", []))
             if not parent_stem:
                 continue
             notice["native_id"] = f"ppra-{parent_stem}"
             notice["buyer_ref"] = f"PPRA/{parent_stem}"
             # The tender was first published on the original notice's date.
-            parent_published = parse_date(fields.get("Publish Date:", {}).get("text", ""))
+            parent_published = parse_date(fields.get("Publish Date", {}).get("text", ""))
             if parent_published:
                 notice["published_at"] = parent_published
-            parent_name = fields.get("Procurement Name:", {}).get("text", "")
+            parent_name = fields.get("Procurement Name", {}).get("text", "")
             if parent_name:
                 notice["parent_title"] = parent_name
         return notices

@@ -55,6 +55,33 @@ class BaseConnector:
             browser_ua=settings.live_browser_ua,
         )
 
+    def scan_budget(self):
+        """How long this source's read has left, and what one request costs.
+
+        A read that runs past the budget of the process it is running in is
+        cut off halfway through and loses everything it had gathered. The read
+        therefore keeps an eye on the clock and stops before that, returning
+        what it has managed to read.
+        """
+        import time
+
+        started = getattr(self, "_scan_started", None)
+        if started is None:
+            started = time.monotonic()
+            self._scan_started = started
+        requests_made = getattr(self, "_scan_requests", 0)
+        elapsed = time.monotonic() - started
+        average = elapsed / requests_made if requests_made else 0.0
+        # A request is costed above the average, so that a slow one still
+        # finishes inside the budget.
+        estimate = max(settings.live_min_interval, average) * 1.5
+        left = settings.live_scan_deadline - elapsed
+        return left, estimate
+
+    def note_request(self):
+        """Note that a request was made, for the estimate above."""
+        self._scan_requests = getattr(self, "_scan_requests", 0) + 1
+
     def abs_url(self, url: str, base: str = "") -> str:
         """Resolve a portal-relative link against the source's listing page.
 
