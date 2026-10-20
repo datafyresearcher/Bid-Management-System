@@ -5,6 +5,11 @@ from pathlib import Path
 
 logger = logging.getLogger("bms.bootstrap")
 
+# The connect timeout the cold start allows. A source is only attempted when
+# at least this much of the budget is left, because a host that cannot be
+# reached is only discovered by trying to open a connection to it.
+CONNECT_ATTEMPT_COST = 4.0
+
 
 def ensure_seeded():
     project_root = Path(__file__).resolve().parents[1]
@@ -65,21 +70,40 @@ def read_within_budget(db, sources, budget=None):
     """Read the given sources until the budget is spent.
 
     The federal portals answer quickly from anywhere. Punjab's answers only
-    from inside Pakistan, so it comes last and is often not reached within
-    the budget.
+    from inside Pakistan, so it comes last — but it is still read, because a
+    portal that cannot be reached has to be recorded as such rather than left
+    looking healthy and unread.
+
+    The budget is shared out fairly: each source gets a slice of what is
+    left, so a slow portal cannot starve the one after it. A host that does
+    not answer fails on the connect timeout, which costs a few seconds and
+    tells the dashboard the truth about that portal.
     """
     from app.config import settings
     from app.services import jobs
 
     limit = budget if budget is not None else settings.live_startup_budget
     started = time.monotonic()
-    for source in sorted(sources, key=lambda s: (s.tier != "P1", s.code)):
+    ordered = sorted(sources, key=lambda s: (s.tier != "P1", s.code))
+    for index, source in enumerate(ordered):
         left = limit - (time.monotonic() - started)
-        if left < 6:
+        if left < CONNECT_ATTEMPT_COST:
+            # Not even a connection attempt fits in what is left.
             logger.info("Startup read stopped after %.0fs", time.monotonic() - started)
             break
+        remaining = len(ordered) - index
+        slice_seconds = max(3.0, min(6.0, left / remaining))
         try:
-            jobs.run_source(db, source, page_budget=1, scan_seconds=6, connect_timeout=4)
+            jobs.run_source(
+                db,
+                source,
+                page_budget=1,
+                scan_seconds=slice_seconds,
+                connect_timeout=4,
+                # A host that cannot be reached costs the same however many
+                # times it is tried, so the cold start does not wait for it.
+                retries=0,
+            )
         except Exception as exc:
             # Record the failure. A portal this deployment cannot reach has to
             # be recorded as unread, or it looks healthy on the register and

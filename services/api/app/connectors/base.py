@@ -14,6 +14,10 @@ class BaseConnector:
     page_budget = None
     scan_seconds = None
     connect_timeout = None
+    # How many times a failed request is retried. A read that has to fit a
+    # tight window can ask for fewer, because a host that cannot be reached
+    # costs the same however many times it is tried.
+    retries = None
 
     def __init__(self, source):
         self.source = source
@@ -59,7 +63,7 @@ class BaseConnector:
             user_agent=settings.user_agent,
             timeout=settings.live_request_timeout,
             min_interval=settings.live_min_interval,
-            retries=settings.live_retries,
+            retries=self.retries if self.retries is not None else settings.live_retries,
             browser_ua=settings.live_browser_ua,
             connect_timeout=self.connect_timeout or settings.live_connect_timeout,
         )

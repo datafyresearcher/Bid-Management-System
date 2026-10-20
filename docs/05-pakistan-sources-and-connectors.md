@@ -370,10 +370,12 @@ unreachable never holds up the others.
 **The first read of a fresh instance.** A dashboard that announces live reading while showing no
 tenders is not much use, so an instance that starts with an empty database reads the portals once
 before it serves its first request. That read is deliberately small — one page per source, a short
-deadline, a short connect timeout — and it stops when its budget is spent, because it happens
-inside the first request. What was read is committed source by source, so it is kept even if the
-budget runs out half way. The federal portals answer quickly from anywhere, so they are read
-first; Punjab's answers only from inside Pakistan and is often not reached within the budget.
+deadline, a short connect timeout, no retries — and it stops when its budget is spent, because it
+happens inside the first request. What was read is committed source by source, so it is kept even
+if the budget runs out half way. The federal portals answer quickly from anywhere, so they are read
+first, but **every portal is given a turn**: the budget is shared out fairly between them, so a
+slow portal cannot starve the one after it, and a portal whose host does not answer at all is
+recorded as a failure rather than left looking healthy and unread.
 
 A scan that returns no notices marks the source **degraded** rather than healthy — a portal that
 answers but yields nothing has changed shape under us, and that is a drift signal.

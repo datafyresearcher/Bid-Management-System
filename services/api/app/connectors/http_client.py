@@ -47,6 +47,8 @@ CONNECTION_MARKERS = (
     "failed to connect",
     "connection refused",
     "connection timed out",
+    "could not resolve host",
+    "couldn't resolve host",
     "name or service not known",
     "temporary failure in name resolution",
     "no route to host",

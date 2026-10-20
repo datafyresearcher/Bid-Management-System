@@ -81,7 +81,9 @@ class Settings(BaseSettings):
     live_connect_timeout: float = 10.0
     # Seconds a freshly started deployment may spend reading the portals
     # before it serves its first request, so that the dashboard is not empty.
-    live_startup_budget: float = 20.0
+    # The budget has to be big enough for every portal to get a turn: a portal
+    # that is never read is a portal the dashboard knows nothing about.
+    live_startup_budget: float = 35.0
     # Only notices published within this many days are taken from a portal
     # that publishes its whole history in one response. Without this a single
     # scan would import thousands of years-old records.
