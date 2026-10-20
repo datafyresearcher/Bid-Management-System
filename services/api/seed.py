@@ -192,16 +192,34 @@ def seed_sources(db):
 
 
 def seed_mappings(db):
-    if db.execute(select(CategoryMapping)).scalars().first():
-        return
-    for source_code, source_category, internal in [
+    """Keep the portal-category mappings in step with the live portals.
+
+    The mappings are applied one at a time rather than only on an empty
+    table, so a category a portal starts publishing — PPRA Punjab's own
+    "Goods" and "Services", for instance — reaches a database that was seeded
+    before it appeared.
+    """
+    wanted = [
         ("ppra_punjab", "Electrical Works", "Transmission Lines"),
         ("ppra_punjab", "Civil Works", "Civil Infrastructure"),
         ("ppra_punjab", "Supply of Goods", "Supply / Goods"),
+        ("ppra_punjab", "Goods", "Supply / Goods"),
+        ("ppra_punjab", "Services", "Services"),
         ("epms_federal", "Works/Electrical", "Substations"),
         ("epms_federal", "Goods", "Supply / Goods"),
-    ]:
-        db.add(CategoryMapping(source_code=source_code, source_category=source_category, internal_category=internal))
+        ("epads_federal", "Consultancy Services", "Services"),
+    ]
+    for source_code, source_category, internal in wanted:
+        existing = db.execute(
+            select(CategoryMapping).where(
+                CategoryMapping.source_code == source_code,
+                CategoryMapping.source_category == source_category,
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            db.add(CategoryMapping(source_code=source_code, source_category=source_category, internal_category=internal))
+        elif existing.internal_category != internal:
+            existing.internal_category = internal
     db.commit()
 
 

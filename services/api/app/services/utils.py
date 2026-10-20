@@ -32,7 +32,30 @@ DATE_FORMATS = [
     "%d %b %y",
     "%d/%m/%y",
     "%d-%m-%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
 ]
+
+# Labels and weekday names that portal listings prefix onto a date, e.g.
+# "Published On: Monday, October 5, 2026 06:00 PM".
+DATE_PREFIXES = (
+    "published on",
+    "published date",
+    "published",
+    "closing date",
+    "closing on",
+    "closing",
+    "last date of submission",
+    "submission date",
+    "date of opening",
+    "opening date",
+    "advertised",
+)
+
+WEEKDAYS = (
+    "monday", "tuesday", "wednesday", "thursday",
+    "friday", "saturday", "sunday",
+)
 
 MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -76,6 +99,28 @@ def parse_date(value):
     if isinstance(value, datetime):
         return value
     text = str(value).strip()
+
+    # An ISO timestamp with a time is tried before the trailing-time strip,
+    # which would otherwise cut "16:23:25" down to "16:".
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pass
+
+    # Strip a leading label and weekday name, e.g. "Published On: Monday,".
+    lowered = text.lower()
+    for prefix in DATE_PREFIXES:
+        if lowered.startswith(prefix):
+            text = text[len(prefix):].lstrip(" :-\t")
+            lowered = text.lower()
+            break
+    for day in WEEKDAYS:
+        if lowered.startswith(day + ","):
+            text = text[len(day) + 1:].lstrip(" ,\t")
+            break
+        if lowered.startswith(day + " "):
+            text = text[len(day) + 1:].lstrip(" ,\t")
+            break
     text = re.sub(r"\s*\d{1,2}[:.]\d{2}\s*(am|pm)?\s*(hours|hrs|h)?\s*$", "", text, flags=re.I)
     text = re.sub(r"\s+(hours|hrs|hrs\.?|time|date|on|by)$", "", text, flags=re.I)
     text = text.strip().rstrip(",.").strip()

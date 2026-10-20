@@ -8,7 +8,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import GateTask, NotificationEvent, Opportunity, Source, User
 from app.security import get_current_user
-from app.serializers import gate_task, notification, opportunity_brief, source
+from app.serializers import gate_task, iso, notification, opportunity_brief, source
 from app.services import ai_quality
 from app.services.utils import utcnow
 
@@ -92,6 +92,27 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         row["records"] = record_counts.get(s.id, 0)
         source_rows.append(row)
 
+    # What the feed is actually doing, so the banner can tell the truth about
+    # it rather than only announcing which mode is switched on. A system set
+    # to read live portals has not read anything until a portal has answered.
+    portals = [s for s in sources if s.type == "portal"]
+    read_live = [s for s in portals if (s.last_scan_stats or {}).get("mode") == "live"]
+    failed = [s for s in portals if s.health == "error"]
+    never_read = [s for s in portals if not s.last_scan_at]
+    last_scan = max((s.last_scan_at for s in portals if s.last_scan_at), default=None)
+    feed_status = {
+        "mode": "saved-capture" if settings.fixtures else "live",
+        "portals_total": len(portals),
+        "portals_read_live": len(read_live),
+        "portals_failed": len(failed),
+        "portals_never_read": len(never_read),
+        "failed_names": [s.name for s in failed],
+        "last_scan_at": iso(last_scan),
+        # A feed that has not spoken to a portal in over a day is not "live"
+        # in any sense a reader should act on.
+        "stale": last_scan is None or (utcnow() - last_scan) > timedelta(hours=24),
+    }
+
     return {
         "state_counts": state_counts,
         "active_count": active_count,
@@ -107,6 +128,7 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         # saved captures of them. Surfaced so nobody mistakes a capture for a
         # live pull.
         "feed_mode": "saved-capture" if settings.fixtures else "live",
+        "feed_status": feed_status,
         "ai_quality": ai_quality.summary(db),
     }
 

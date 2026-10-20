@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -22,6 +23,7 @@ def run_source(db, source) -> dict:
     from app.connectors.registry import get_connector
     from app.services import normalizer
 
+    started = time.monotonic()
     connector = get_connector(source)
     if not connector:
         source.health = "no_adapter"
@@ -39,7 +41,12 @@ def run_source(db, source) -> dict:
     after_ids = set(db.execute(select(Opportunity.id)).scalars().all())
     created = len(after_ids - before_ids)
 
-    source.health = "ok"
+    # A portal that answers but yields nothing has changed shape under us.
+    # That is a drift signal, not a healthy scan, so it is not recorded as one.
+    if notices:
+        source.health = "ok"
+    else:
+        source.health = "degraded"
     source.last_scan_at = utcnow()
     source.last_scan_stats = {
         "notices": len(notices),
@@ -48,6 +55,7 @@ def run_source(db, source) -> dict:
         # Be explicit about whether this capture came off the live portal or
         # from a saved copy of one. The dashboard shows this to the user.
         "mode": "saved-capture" if connector.fixture_mode else "live",
+        "seconds": round(time.monotonic() - started, 1),
     }
     db.commit()
 

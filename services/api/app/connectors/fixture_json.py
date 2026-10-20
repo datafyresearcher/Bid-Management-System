@@ -37,7 +37,7 @@ class FixtureJsonConnector(BaseConnector):
             return notices
         return []
 
-    def fetch_documents(self, native_id):
+    def fetch_documents(self, native_id, ref=None):
         if not native_id or not self.fixture_mode:
             return None
         path = self.fixture_path("documents.json")

@@ -118,7 +118,7 @@ def fetch_for_opportunity(db, opp) -> int:
         if not connector:
             continue
         native_id = ref.get("native_id") or ""
-        documents = connector.fetch_documents(native_id)
+        documents = connector.fetch_documents(native_id, ref=ref)
         if documents is None:
             continue
         for filename, content in documents:

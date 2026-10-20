@@ -228,7 +228,10 @@ def source_attribution(o):
 
     primary = refs[0] if refs else {}
     notice_url = primary.get("url") or ""
-    reference = primary.get("native_id") or ""
+    document_url = primary.get("document_url") or ""
+    # The reference the authority published the notice under, when the portal
+    # states one. Otherwise the capture's own id.
+    reference = primary.get("reference") or primary.get("native_id") or ""
     portal_url = src.url if src else ""
     listing_url = src.listing_url if src else ""
 
@@ -236,7 +239,7 @@ def source_attribution(o):
     for ref in refs[1:]:
         extra.append(
             {
-                "reference": ref.get("native_id") or "",
+                "reference": ref.get("reference") or ref.get("native_id") or "",
                 "notice_url": ref.get("url") or "",
                 "source_code": ref.get("source_code") or "",
             }
@@ -253,6 +256,7 @@ def source_attribution(o):
         "portal_url": portal_url,
         "listing_url": listing_url,
         "notice_url": notice_url,
+        "document_url": document_url,
         "reference": reference,
         "last_scan_at": iso(src.last_scan_at) if src else None,
         "scan_mode": (src.last_scan_stats or {}).get("mode", "") if src else "",

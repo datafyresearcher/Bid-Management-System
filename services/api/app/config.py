@@ -50,6 +50,33 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     user_agent: str = "BMS-Bot/0.1 (+contact@ahte.example)"
 
+    # --- Live portal reading -------------------------------------------
+    # How long to wait on a single portal request. These are government sites
+    # on slow links, and NTDC's own site in particular can take a minute.
+    live_request_timeout: int = 60
+    # Whether a live read presents a browser User-Agent. Several of these
+    # portals refuse programmatic clients outright — NTDC answers 403 to a
+    # bot User-Agent and 200 to a browser one — so a live read has to look
+    # like the browser a bid manager would have used. Only public pages are
+    # read, the request rate stays low, and nothing ever signs in.
+    live_browser_ua: bool = True
+    # Minimum seconds between two requests to the same portal. Public-sector
+    # sites are not to be hammered, and the docs ask for one request per 3s.
+    live_min_interval: float = 1.5
+    # How many times a failed request is retried before the source is marked
+    # degraded. Zero means a transient blip marks the source unhealthy.
+    live_retries: int = 2
+    # How many listing pages to walk per source in one scan. Keeps a scan
+    # inside the time budget of a serverless function.
+    live_max_pages: int = 3
+    # How many notices per source are enriched with a detail-page read in a
+    # single scan. Detail reads are the expensive part, so they are rationed.
+    live_max_details: int = 15
+    # Only notices published within this many days are taken from a portal
+    # that publishes its whole history in one response. Without this a single
+    # scan would import thousands of years-old records.
+    live_lookback_days: int = 60
+
     secret_key: str = "change-me-in-production"
     token_ttl_hours: int = 12
 

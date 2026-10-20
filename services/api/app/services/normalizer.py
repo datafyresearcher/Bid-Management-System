@@ -1,10 +1,22 @@
 import hashlib
+import re
 
 from sqlalchemy import select
 
 from app.models import CategoryMapping, Lead, Opportunity, RawSnapshot
 from app.services import audit, notifications
 from app.services.utils import detect_currency, normalize_key, parse_amount, parse_date, value_band
+
+
+def _keyword_hit(keyword: str, text: str) -> bool:
+    """Whether a keyword appears in the text as a word of its own.
+
+    A short code would otherwise match inside a longer word: "gss" sits inside
+    "GSSSE", which would have a school meals tender filed under substations.
+    """
+    if keyword.isalnum() and len(keyword) <= 4:
+        return re.search(rf"\b{re.escape(keyword)}\b", text, re.I) is not None
+    return keyword in text
 
 CATEGORY_KEYWORDS = {
     "Substations": ["substation", "grid station", "grid-station", "gss", "transformer"],
@@ -44,7 +56,7 @@ def classify_category(db, source_code: str, source_category: str, title: str, de
             return mapping.internal_category
     text = f"{title} {description}".lower()
     for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(k in text for k in keywords):
+        if any(_keyword_hit(k, text) for k in keywords):
             return category
     return "General"
 
@@ -52,10 +64,10 @@ def classify_category(db, source_code: str, source_category: str, title: str, de
 def classify_tender_type(title: str, description: str) -> str:
     text = f"{title} {description}".lower()
     for tender_type in ["Auction-Disposal", "EOI", "PQ", "RFP"]:
-        if any(k in text for k in TENDER_TYPE_KEYWORDS[tender_type]):
+        if any(_keyword_hit(k, text) for k in TENDER_TYPE_KEYWORDS[tender_type]):
             return tender_type
     for tender_type in ["Works", "Goods", "Services"]:
-        if any(k in text for k in TENDER_TYPE_KEYWORDS[tender_type]):
+        if any(_keyword_hit(k, text) for k in TENDER_TYPE_KEYWORDS[tender_type]):
             return tender_type
     return "Works"
 
@@ -91,30 +103,83 @@ def build_dedup_key(buyer: str, ref: str, published_at) -> str:
     return normalize_key(f"{buyer}|{ref}|{year}")[:380]
 
 
+def _same_tender_record(db, source, notice: dict):
+    """An existing record for the same tender, published under another notice.
+
+    A corrigendum is the tender it corrects, published a second time. When the
+    correction reaches us after the original notice has already been captured,
+    the two have to end up as one record rather than two.
+
+    The pairing is only made when it is unambiguous: exactly one record from
+    the same source carries the same procurement name for the same department,
+    and one of the two notices is a correction. Where the department has
+    published several notices under that name, which of them the correction
+    belongs to is not knowable, and the correction is kept as its own record.
+    """
+    title = (notice.get("title") or "").strip().upper()
+    buyer = (notice.get("buyer_name") or "").strip()
+    if not title or not buyer:
+        return None
+
+    is_corrigendum = (notice.get("notice_status") or "") == "Corrigendum"
+    rows = (
+        db.execute(
+            select(Opportunity).where(
+                Opportunity.source_id == source.id,
+                Opportunity.buyer_name == buyer,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    matches = [o for o in rows if (o.title or "").strip().upper() == title]
+    if len(matches) != 1:
+        return None
+    existing = matches[0]
+    if not (is_corrigendum or existing.notice_status == "Corrigendum"):
+        return None
+    return existing
+
+
 def normalize_notice(db, source, notice: dict) -> Opportunity:
     published = parse_date(notice.get("published_at"))
     dedup_key = build_dedup_key(notice.get("buyer_name", ""), notice.get("buyer_ref", ""), published)
     existing = None
     if dedup_key and not dedup_key.endswith("|na"):
         existing = db.execute(select(Opportunity).where(Opportunity.dedup_key == dedup_key)).scalar_one_or_none()
+    # A correction of a tender that is already on file is that tender, not a
+    # second one.
+    paired = False
+    if existing is None:
+        existing = _same_tender_record(db, source, notice)
+        paired = existing is not None
 
     source_ref = {
         "source_id": source.id,
         "source_code": source.code,
         "native_id": notice.get("native_id"),
         "url": notice.get("url"),
+        # The reference the authority published the notice under, when the
+        # portal states one, and the notice document itself.
+        "reference": notice.get("portal_reference") or notice.get("buyer_ref", ""),
+        "document_url": notice.get("document_url", ""),
     }
 
     if existing:
         # Copy the refs into fresh dicts. Mutating the loaded dicts in place
         # would change the old value too, and the update would never be flushed.
         refs = [dict(r) for r in (existing.source_refs or [])]
+        status = (notice.get("notice_status") or "").strip()
+        # A corrigendum is more specific than a plain publication. Once a
+        # tender is known to carry one, a later scan of the original notice
+        # does not undo that, nor does it replace the correction's document.
+        keep_corrigendum = existing.notice_status == "Corrigendum" and status != "Corrigendum"
         matched = False
         for i, r in enumerate(refs):
             if r.get("source_code") == source.code and r.get("native_id") == source_ref["native_id"]:
                 # Same notice seen again. Keep the stored reference current —
                 # portals move pages and the canonical URL changes over time.
-                if source_ref.get("url") and r.get("url") != source_ref["url"]:
+                if source_ref.get("url") and r.get("url") != source_ref["url"] and not keep_corrigendum:
                     refs[i] = {**r, "url": source_ref["url"]}
                 matched = True
                 break
@@ -123,6 +188,17 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         existing.source_refs = refs
         if existing.source_id is None:
             existing.source_id = source.id
+        # A corrigendum can move a deadline that was already recorded. The
+        # later date wins, because it is the one the authority published last.
+        deadline = parse_date(notice.get("submission_deadline"))
+        if deadline and (existing.submission_deadline is None or deadline > existing.submission_deadline):
+            existing.submission_deadline = deadline
+        if paired and published and (existing.published_at is None or published < existing.published_at):
+            # The tender was first published with the original notice, which
+            # may only be reaching us now.
+            existing.published_at = published
+        if status and status != existing.notice_status and not keep_corrigendum:
+            existing.notice_status = status
         db.commit()
         return existing
 
@@ -133,6 +209,9 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
     estimated_value = parse_amount(notice.get("estimated_value"))
     regime, family = detect_regime(combined)
     category = classify_category(db, source.code, notice.get("source_category", ""), title, description)
+    # When the portal states the procurement type itself, that is used rather
+    # than a guess from the wording of the title.
+    tender_type = (notice.get("tender_type") or "").strip() or classify_tender_type(title, description)
 
     opp = Opportunity(
         dedup_key=dedup_key,
@@ -141,7 +220,7 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         city=notice.get("city", ""),
         category_internal=category,
         category_source=notice.get("source_category", ""),
-        tender_type=classify_tender_type(title, description),
+        tender_type=tender_type,
         procurement_regime=regime,
         contract_family=family,
         source_kind=getattr(source, "type", "portal"),
@@ -156,7 +235,7 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         clarification_deadline=parse_date(notice.get("clarification_deadline")),
         submission_deadline=parse_date(notice.get("submission_deadline")),
         opening_at=parse_date(notice.get("opening_at")),
-        notice_status="Published",
+        notice_status=(notice.get("notice_status") or "").strip() or "Published",
         state="NORMALIZED",
         source_refs=[source_ref],
         source_id=source.id,

@@ -1,0 +1,34 @@
+{
+  "notices": [
+    {
+      "native_id": "epads-146307",
+      "url": "https://epads.gov.pk/opportunities/federal/procurements/146307",
+      "title": "Hiring of Firm for IFRS 9 - Expected Credit Loss (ECL) Framework - Design, Development and Implementation",
+      "buyer_name": "Export-Import Bank of Pakistan (EXIM Bank)",
+      "buyer_ref": "P146307",
+      "source_category": "Consultancy Services",
+      "city": "Islamabad",
+      "area": "Federal",
+      "estimated_value": null,
+      "published_at": "2026-10-05",
+      "submission_deadline": null,
+      "opening_at": null,
+      "description": "Consultancy Services Single Stage-One Envelope"
+    },
+    {
+      "native_id": "epads-137286",
+      "url": "https://epads.gov.pk/opportunities/federal/procurements/137286",
+      "title": "Consultancy Services for Security Risk Assessment, Security Protocols and Development of Security Operations Centre",
+      "buyer_name": "Independent System and Market Operator (ISMO)",
+      "buyer_ref": "P137286",
+      "source_category": "Consultancy Services",
+      "city": "Islamabad",
+      "area": "Federal",
+      "estimated_value": null,
+      "published_at": "2026-09-28",
+      "submission_deadline": null,
+      "opening_at": null,
+      "description": "Consultancy Services Single Stage-Two Envelope"
+    }
+  ]
+}

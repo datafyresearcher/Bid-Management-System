@@ -1,0 +1,155 @@
+"""Shared HTTP client for live portal reads.
+
+Two things make government portals awkward to fetch, and both are handled
+here rather than in each connector:
+
+* **TLS fingerprinting.** Some portals (PPRA Punjab's Active Procurement, for
+  one) complete the handshake and then drop the connection unless the client
+  looks like a real browser. `curl_cffi` reproduces Chrome's TLS signature, so
+  a read looks like the browser a bid manager would have used.
+* **Politeness.** These are public-sector sites. Requests are spaced out, the
+  User-Agent identifies us, and a failing portal is retried a small number of
+  times rather than hammered.
+
+Everything here is read-only. Nothing in this module logs in, and nothing
+stores portal credentials.
+"""
+
+import logging
+import time
+
+logger = logging.getLogger("bms.http")
+
+# A browser-grade client, when one is available. `curl_cffi` impersonates
+# Chrome's TLS fingerprint, which is what gets past portals that drop
+# non-browser clients mid-handshake.
+try:  # pragma: no cover - availability depends on the environment
+    from curl_cffi import requests as _curl_requests
+
+    HAS_CURL_CFFI = True
+except Exception:  # pragma: no cover
+    _curl_requests = None
+    HAS_CURL_CFFI = False
+
+import httpx
+
+
+class FetchError(RuntimeError):
+    """A portal could not be read."""
+
+
+class LiveClient:
+    """A polite, retrying reader for public portal pages."""
+
+    def __init__(
+        self,
+        user_agent: str = "",
+        timeout: float = 45.0,
+        min_interval: float = 1.5,
+        retries: int = 2,
+        impersonate: bool = True,
+        browser_ua: bool = True,
+    ):
+        self.user_agent = user_agent or "AHTE-BMS/0.1 (bid desk; contact admin@ahte.local)"
+        self.timeout = timeout
+        self.min_interval = min_interval
+        self.retries = max(0, retries)
+        self.impersonate = impersonate and HAS_CURL_CFFI
+        # With browser impersonation the request has to carry the browser's
+        # own User-Agent, or the portal refuses it. Overriding it with our own
+        # string is what earns a 403 from NTDC.
+        self.browser_ua = browser_ua
+        self._last_request_at = 0.0
+
+    def _wait(self):
+        """Space requests out so a portal is never hit in a burst."""
+        elapsed = time.monotonic() - self._last_request_at
+        if elapsed < self.min_interval:
+            time.sleep(self.min_interval - elapsed)
+        self._last_request_at = time.monotonic()
+
+    def get(self, url: str, headers: dict | None = None) -> str:
+        """Fetch a page and return its text. Raises FetchError on failure."""
+        return self._request("GET", url, headers=headers)
+
+    def post(self, url: str, data: dict, headers: dict | None = None) -> str:
+        """Submit a form and return the response text.
+
+        Some portals page through an ASP.NET WebForms grid, where moving to
+        the next page is a form post rather than a URL.
+        """
+        return self._request("POST", url, data=data, headers=headers)
+
+    def _request(self, method: str, url: str, data: dict | None = None, headers: dict | None = None) -> str:
+        base_headers = {}
+        if not (self.impersonate and self.browser_ua):
+            # Only send our own identity when we are not impersonating a
+            # browser — see the note on `browser_ua`.
+            base_headers = {
+                "User-Agent": self.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        if headers:
+            base_headers.update(headers)
+
+        last_error = None
+        for attempt in range(self.retries + 1):
+            self._wait()
+            try:
+                if self.impersonate:
+                    # curl_cffi names the redirect flag `allow_redirects`.
+                    response = _curl_requests.request(
+                        method,
+                        url,
+                        impersonate="chrome124",
+                        headers=base_headers,
+                        data=data,
+                        timeout=self.timeout,
+                        allow_redirects=True,
+                    )
+                else:
+                    with httpx.Client(
+                        timeout=self.timeout,
+                        follow_redirects=True,
+                        headers=base_headers,
+                        verify=False,
+                    ) as client:
+                        response = client.request(method, url, data=data)
+                if response.status_code >= 400:
+                    raise FetchError(f"HTTP {response.status_code} for {url}")
+                return _decode(response)
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.retries:
+                    backoff = 2 ** attempt
+                    logger.warning("Fetch failed (%s); retrying in %ss", exc, backoff)
+                    time.sleep(backoff)
+        raise FetchError(f"could not read {url}: {last_error}")
+
+
+def _decode(response) -> str:
+    """Decode a response, preferring UTF-8.
+
+    These portals serve UTF-8, but the client guesses latin-1 when the
+    response carries no charset — and latin-1 turns a curly apostrophe into
+    three mojibake characters. UTF-8 is tried strictly first; the response's
+    own charset is only used when the bytes are genuinely not UTF-8.
+    """
+    raw = response.content
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+
+    charset = None
+    try:
+        charset = response.encoding
+    except Exception:
+        charset = None
+    if charset:
+        try:
+            return raw.decode(charset, errors="replace")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    return raw.decode("utf-8", errors="replace")

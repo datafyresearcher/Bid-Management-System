@@ -229,6 +229,11 @@ The registry records whether a capture came off the live portal or from a saved 
 (`last_scan_stats.mode`: `live` or `saved-capture`). The dashboard banner states this, so a saved
 capture is never presented as a live pull.
 
+The banner goes further than announcing the mode. It reports what the feed has actually done: how
+many portals answered, when they last answered, and which ones failed. A system switched to live
+reading that has not yet read a portal says so, and a feed that has stopped answering is shown as
+stale rather than as live.
+
 ---
 
 ## 10. Showing provenance to the user
@@ -243,3 +248,116 @@ The dashboard answers "where did this come from?" in three places:
 
 The same attribution block appears on the opportunity detail page, where a reviewer confirms a
 single tender before deciding to bid.
+
+---
+
+## 11. Reading the portals live
+
+The connectors read the authorities' own pages. Nothing is aggregated, nothing is mirrored, and no
+access control is bypassed. What follows is the operational detail of running that in anger.
+
+### 11.1 Switching it on
+
+```
+BMS_FIXTURES=false
+```
+
+That is the whole switch. `settings.fixtures` selects between two paths in every connector: the
+saved capture used in demo mode, and the live read used in production. Both paths are kept, so the
+demo never depends on the portals being up and the live path never depends on a capture being
+fresh.
+
+The live settings live in `services/api/app/config.py` and can be overridden by environment
+variable:
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `BMS_LIVE_REQUEST_TIMEOUT` | 60 | Seconds allowed for one portal request. These are slow government sites. |
+| `BMS_LIVE_MIN_INTERVAL` | 1.5 | Minimum seconds between two requests to the same portal. |
+| `BMS_LIVE_RETRIES` | 2 | Retries after a failed request, with exponential backoff. |
+| `BMS_LIVE_MAX_PAGES` | 3 | Listing pages walked per source in one scan. |
+| `BMS_LIVE_MAX_DETAILS` | 15 | Detail pages read per source in one scan. |
+| `BMS_LIVE_LOOKBACK_DAYS` | 60 | How far back to read a portal that publishes its whole history at once. |
+| `BMS_LIVE_BROWSER_UA` | true | Whether a live read presents a browser User-Agent (see 11.3). |
+
+### 11.2 What each connector reads
+
+| Source | What is read | How |
+|--------|--------------|-----|
+| `ppra_punjab` | `eproc.punjab.gov.pk/ActiveTenders.aspx` | ASP.NET WebForms grid. Pages are reached by **postback**, carrying `__VIEWSTATE` and `__EVENTVALIDATION` back to the server; the postback target for each page is read from the pager's own links rather than guessed. |
+| `epms_federal` | `epms.ppra.gov.pk/public/tenders/active-tenders` | Server-rendered table; the organisation card under each tender row carries the buyer. |
+| `epads_federal` | `epads.gov.pk` | Server-rendered table; the full title and agency are read from the tooltip attributes, because the visible cell is truncated. |
+| `ntdc` | `ntdc.gov.pk/ntdc/api/tenders` | Public JSON feed, no key and no session. The page itself is an Angular shell with no markup to read. |
+| `wapda` | `wapda.gov.pk/wapda-tenders/` | WordPress posts, with the pager behind a query variable. |
+
+Only public pages are read. The supplier registration, captcha and bid-submission pages of these
+portals are never touched, and no credential is ever stored or sent — the system never signs in to
+a portal, and submission stays a human act (D-06).
+
+### 11.3 Reading as a browser, and why
+
+Some of these portals drop a client that does not look like a browser. NTDC answers **403** to a
+bot User-Agent and **200** to a browser one. PPRA Punjab's `.aspx` pages complete the handshake and
+then drop the connection unless the client's TLS signature matches a browser's.
+
+The live client therefore reproduces Chrome's TLS fingerprint (`curl_cffi`), and presents a browser
+User-Agent. This is a read of a page any member of the public can open by typing its address; it
+is not an attempt to get at anything a visitor would not see. The rate stays low, and the
+User-Agent can be replaced with the system's own identity by setting `BMS_LIVE_BROWSER_UA=false` on
+any portal that accepts it.
+
+**Credentials found in a portal's own JavaScript bundle are not used.** NTDC ships an SDXP API key
+in its public bundle; that key was left alone. Reading the public feed that the site's own
+JavaScript calls needs no credential at all.
+
+### 11.4 What is recorded, and what is not
+
+A notice is only recorded with what the portal actually published:
+
+- A closing date that a portal does not publish stays empty. EPADS publishes a countdown ("closing
+  in 19 hours") and renders its dates in JavaScript; NTDC's feed has no closing date; WAPDA's
+  listing does not carry one. In all three the deadline is left empty and picked up later from the
+  notice document at Gate 2, rather than estimated.
+- A reference is recorded only when the portal prints one. Where the listing has no reference field
+  the notice is identified by the document the authority published it under, and the reference shown
+  against the record is the one the authority printed.
+- The portal's own type is used rather than a guess from the wording of the title. PPRA Punjab
+  prints "Goods", "Services" or "Work"; that decides the tender type.
+
+### 11.5 Corrigenda
+
+A corrigendum is the tender it corrects, published a second time. PPRA Punjab and EPMS both list
+the correction as a notice of its own, so the same tender appears twice in the listing. The
+connectors tie the two together where the pairing is unambiguous, and the record keeps the
+**later** closing date and is marked `Corrigendum`, because a corrected closing date is the thing
+a bid manager must not miss.
+
+### 11.6 Running it
+
+A scan is per source: `POST /api/sources/{id}/scan`, or the **Scan** button in the dashboard's
+source register (bid managers and admins). One source per request keeps the read inside the
+function budget of a serverless deployment.
+
+Where the API runs as a long-lived service, the scheduler loop runs the same code on an interval
+(`BMS_SCHEDULER_ENABLED=true`, `BMS_SCAN_INTERVAL_SECONDS`).
+
+A scan that returns no notices marks the source **degraded** rather than healthy — a portal that
+answers but yields nothing has changed shape under us, and that is a drift signal.
+
+### 11.7 Drift detection
+
+`python capture_golden.py` saves the current listing page of each portal into
+`services/api/tests/golden/`. The parser tests run against those captures on every build, so a
+change in how a portal lays out its page fails the build instead of quietly emptying the
+dashboard. Re-run the capture when a portal changes and the tests tell you what moved.
+
+### 11.8 Runbook
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Source health `degraded`, 0 notices | Portal layout changed, or the listing moved | Re-run `capture_golden.py`, read the diff, update the parser |
+| Source health `error` | Portal unreachable, or the TLS fingerprint was rejected | Check the portal by hand; confirm `curl_cffi` is installed (`pip install -r requirements.txt`) |
+| Records appear but with no closing date | The portal does not publish one | Expected for EPADS, NTDC and WAPDA; the deadline arrives with the notice document at Gate 2 |
+| Records appear with a document link instead of a page | The portal has no per-notice page | Expected for PPRA Punjab; the link opens the authority's own notice document |
+| A tender appears twice | Two genuinely different notices share a name | Check the references: two different references are two different tenders |
+| Scan times out | The portal is slow today | Lower `BMS_LIVE_MAX_PAGES`; the scan is per source and can be repeated |

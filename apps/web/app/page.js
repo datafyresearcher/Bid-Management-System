@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
+import { api, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(null);
+  const [scanNote, setScanNote] = useState("");
 
   const load = () => {
     api("/api/dashboard").then(setData).catch((e) => setError(e.message));
@@ -30,16 +32,69 @@ export default function DashboardPage() {
     load();
   };
 
+  // Reading a portal takes the time the portal takes. The button stays busy
+  // until the connector comes back, and says what happened either way.
+  const runScan = async (source) => {
+    setScanning(source.code);
+    setScanNote("");
+    try {
+      const result = await api(`/api/sources/${source.id}/scan`, { method: "POST" });
+      setScanNote(`${source.name}: read ${result.notices} notices, ${result.new} new.`);
+      load();
+    } catch (err) {
+      setScanNote(`${source.name}: could not be read — ${err.message}`);
+    } finally {
+      setScanning(null);
+    }
+  };
+
+  const canScan = ["admin", "bid_manager"].includes(getUser()?.role);
+
+  // The banner has to say what the feed is really doing. A system switched to
+  // live reading has not read anything until a portal has answered, and a
+  // feed that stopped talking to its portals is not live in any sense.
+  const feed = data.feed_status || {};
+  const banner = (() => {
+    if (feed.mode !== "live") {
+      return {
+        tone: "info",
+        text: "Connectors are reading saved captures of the official portals listed below — every reference and notice link still points at the authority's own site.",
+      };
+    }
+    if (!feed.portals_read_live) {
+      return {
+        tone: "err",
+        text: "Live reading is switched on, but no portal has been read yet — what is on screen is the seeded demo data, not live tenders. Run a scan from the source register below.",
+      };
+    }
+    const when = feed.last_scan_at ? fmtDateTime(feed.last_scan_at) : "an unknown time ago";
+    const read = `${feed.portals_read_live} of ${feed.portals_total} portals were read directly, ${when}.`;
+    if (feed.portals_failed) {
+      return {
+        tone: "err",
+        text: `Live reading: ${read} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
+      };
+    }
+    if (feed.stale) {
+      return {
+        tone: "err",
+        text: `Live reading: ${read} That is more than a day old, so this view may miss tenders published since.`,
+      };
+    }
+    return {
+      tone: "ok",
+      text: `Live reading: ${read} Every reference and notice link points at the authority's own site.`,
+    };
+  })();
+
   return (
     <>
       <h2 className="page-title">Dashboard</h2>
       <p className="page-sub">Live view of discovery, screening and gate activity.</p>
 
-      <div className={`notice ${data.feed_mode === "live" ? "ok" : "info"} src-banner`}>
+      <div className={`notice ${banner.tone} src-banner`}>
         <strong>Where this data comes from.</strong>{" "}
-        {data.feed_mode === "live"
-          ? "Connectors are pulling directly from the official portals listed below."
-          : "Connectors are reading saved captures of the official portals listed below — every reference and notice link still points at the authority's own site."}{" "}
+        {banner.text}{" "}
         <a href="#data-sources">See the source register</a>.
       </div>
 
@@ -228,6 +283,7 @@ export default function DashboardPage() {
                 <th>Access</th>
                 <th>Last scan</th>
                 <th>Health</th>
+                {canScan ? <th>Read now</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -260,10 +316,26 @@ export default function DashboardPage() {
                     {s.last_scan_stats?.mode ? <div className="muted">{s.last_scan_stats.mode}</div> : null}
                   </td>
                   <td data-label="Health"><span className={sourceHealthClass(s.health)}>{s.health}</span></td>
+                  {canScan ? (
+                    <td data-label="Read now">
+                      {s.type === "portal" ? (
+                        <button
+                          className="btn small"
+                          disabled={scanning !== null}
+                          onClick={() => runScan(s)}
+                        >
+                          {scanning === s.code ? "Reading…" : "Scan"}
+                        </button>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
           </table>
+          {scanNote ? <p className="muted src-note">{scanNote}</p> : null}
         </div>
       </div>
 
