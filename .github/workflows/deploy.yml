@@ -72,8 +72,11 @@ jobs:
 
       - name: Check the Vercel token
         run: |
-          if ! vercel whoami --token="$VERCEL_TOKEN" > /dev/null 2>&1; then
-            echo "::error::The Vercel token is expired or invalid. Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
+          echo "token length: ${#VERCEL_TOKEN}"
+          if ! out=$(vercel whoami --token="$VERCEL_TOKEN" 2>&1); then
+            echo "::error::The Vercel token is expired or invalid."
+            echo "::error::vercel whoami said: ${out}"
+            echo "::error::Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
             exit 1
           fi
           echo "Vercel token is valid"
@@ -104,8 +107,11 @@ jobs:
 
       - name: Check the Vercel token
         run: |
-          if ! vercel whoami --token="$VERCEL_TOKEN" > /dev/null 2>&1; then
-            echo "::error::The Vercel token is expired or invalid. Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
+          echo "token length: ${#VERCEL_TOKEN}"
+          if ! out=$(vercel whoami --token="$VERCEL_TOKEN" 2>&1); then
+            echo "::error::The Vercel token is expired or invalid."
+            echo "::error::vercel whoami said: ${out}"
+            echo "::error::Create a new token in Vercel (Settings -> Tokens), then update the repository secret: gh secret set VERCEL_TOKEN --body '<new token>'"
             exit 1
           fi
           echo "Vercel token is valid"
