@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     live_max_pages: int = 3
     # How many notices per source are enriched with a detail-page read in a
     # single scan. Detail reads are the expensive part, so they are rationed.
-    live_max_details: int = 15
+    live_max_details: int = 8
     # Only notices published within this many days are taken from a portal
     # that publishes its whole history in one response. Without this a single
     # scan would import thousands of years-old records.

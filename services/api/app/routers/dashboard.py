@@ -100,6 +100,15 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
     failed = [s for s in portals if s.health == "error"]
     never_read = [s for s in portals if not s.last_scan_at]
     last_scan = max((s.last_scan_at for s in portals if s.last_scan_at), default=None)
+
+    # Records carry the mode of the read that captured them, so what is on
+    # screen can be counted by where it came from.
+    ref_rows = db.execute(select(Opportunity.source_refs)).scalars().all()
+    live_records = sum(
+        1 for refs in ref_rows if refs and any(isinstance(r, dict) and r.get("mode") == "live" for r in refs)
+    )
+    total_records = db.execute(select(func.count(Opportunity.id))).scalar_one()
+
     feed_status = {
         "mode": "saved-capture" if settings.fixtures else "live",
         "portals_total": len(portals),
@@ -108,6 +117,9 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "portals_never_read": len(never_read),
         "failed_names": [s.name for s in failed],
         "last_scan_at": iso(last_scan),
+        "records_total": total_records,
+        "records_live": live_records,
+        "records_other": total_records - live_records,
         # A feed that has not spoken to a portal in over a day is not "live"
         # in any sense a reader should act on.
         "stale": last_scan is None or (utcnow() - last_scan) > timedelta(hours=24),

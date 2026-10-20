@@ -230,9 +230,9 @@ The registry records whether a capture came off the live portal or from a saved 
 capture is never presented as a live pull.
 
 The banner goes further than announcing the mode. It reports what the feed has actually done: how
-many portals answered, when they last answered, and which ones failed. A system switched to live
-reading that has not yet read a portal says so, and a feed that has stopped answering is shown as
-stale rather than as live.
+many portals answered, when they last answered, which ones failed, and how many of the records on
+screen came from a live read. Every record carries the mode of the read that captured it, so a
+seeded demo record is counted separately from a live one and cannot pass for a tender.
 
 ---
 
@@ -266,6 +266,11 @@ That is the whole switch. `settings.fixtures` selects between two paths in every
 saved capture used in demo mode, and the live read used in production. Both paths are kept, so the
 demo never depends on the portals being up and the live path never depends on a capture being
 fresh.
+
+The deployed API is switched by the release pipeline: `.github/workflows/deploy.yml` sets
+`BMS_FIXTURES=false` on the Vercel API project before it deploys, and the smoke test fails the
+build if the running API still reports that it is reading saved captures. Change that one line in
+the workflow to go back to the demo feed.
 
 The live settings live in `services/api/app/config.py` and can be overridden by environment
 variable:

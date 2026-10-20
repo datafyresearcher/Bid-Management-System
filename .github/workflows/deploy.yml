@@ -87,6 +87,13 @@ jobs:
         working-directory: services/api
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
+      # The dashboard reads the authorities' own portals. This is the switch
+      # that says so to the deployed API; change it here if the demo feed is
+      # wanted back.
+      - name: Point the API at the live portals
+        working-directory: services/api
+        run: vercel env add BMS_FIXTURES --environment production --value false --force --yes --token="$VERCEL_TOKEN"
+
       - name: Deploy to production
         working-directory: services/api
         run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
@@ -155,3 +162,16 @@ jobs:
         run: |
           curl -sf -o /dev/null -w "web status %{http_code}\n" "$WEB_URL/"
           curl -sf -o /dev/null -w "web login status %{http_code}\n" "$WEB_URL/login"
+
+      - name: Check the API is reading the live portals
+        env:
+          API_URL: ${{ vars.VERCEL_API_URL || 'https://bms-ahte-api.vercel.app' }}
+        run: |
+          body=$(curl -sf "$API_URL/api/health")
+          echo "$body"
+          if echo "$body" | grep -q '"fixtures":true'; then
+            echo "::error::The API is still reading saved captures instead of the live portals."
+            echo "::error::Check the BMS_FIXTURES environment variable on the Vercel API project."
+            exit 1
+          fi
+          echo "The API is reading the live portals"

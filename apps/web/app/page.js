@@ -69,21 +69,25 @@ export default function DashboardPage() {
     }
     const when = feed.last_scan_at ? fmtDateTime(feed.last_scan_at) : "an unknown time ago";
     const read = `${feed.portals_read_live} of ${feed.portals_total} portals were read directly, ${when}.`;
+    const count = `${feed.records_live ?? 0} of ${feed.records_total ?? 0} records came from those reads.`;
+    const other = feed.records_other
+      ? ` The other ${feed.records_other} are seeded demo records, not live tenders.`
+      : "";
     if (feed.portals_failed) {
       return {
         tone: "err",
-        text: `Live reading: ${read} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
+        text: `Live reading: ${read} ${count}${other} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
       };
     }
     if (feed.stale) {
       return {
         tone: "err",
-        text: `Live reading: ${read} That is more than a day old, so this view may miss tenders published since.`,
+        text: `Live reading: ${read} ${count}${other} That is more than a day old, so this view may miss tenders published since.`,
       };
     }
     return {
       tone: "ok",
-      text: `Live reading: ${read} Every reference and notice link points at the authority's own site.`,
+      text: `Live reading: ${read} ${count}${other} Every reference and notice link points at the authority's own site.`,
     };
   })();
 

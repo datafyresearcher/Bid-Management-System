@@ -3,6 +3,7 @@ import re
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.models import CategoryMapping, Lead, Opportunity, RawSnapshot
 from app.services import audit, notifications
 from app.services.utils import detect_currency, normalize_key, parse_amount, parse_date, value_band
@@ -163,6 +164,9 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         # portal states one, and the notice document itself.
         "reference": notice.get("portal_reference") or notice.get("buyer_ref", ""),
         "document_url": notice.get("document_url", ""),
+        # Whether this record came off the live portal or out of a saved
+        # capture of one, so the dashboard can tell the two apart.
+        "mode": "saved-capture" if settings.fixtures else "live",
     }
 
     if existing:
