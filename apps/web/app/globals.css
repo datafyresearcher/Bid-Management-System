@@ -541,6 +541,14 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 3px;
   .grid.cols-2 { grid-template-columns: 1fr; }
 }
 
+/* The dashboard's gate queue is the widest table in the app - five columns,
+   each carrying a title, a buyer, a source and a countdown. In a half-width
+   card the action column gets squeezed and the Open button is clipped, so the
+   queue takes the full content width until two columns genuinely fit. */
+@media (max-width: 1520px) {
+  .main > .grid.cols-2:has(td[data-label="Review SLA"]) { grid-template-columns: 1fr; }
+}
+
 /* ==========================================================================
    Phone — up to 767px
    Tables stack into cards, forms go full width and every control grows to
