@@ -93,7 +93,7 @@ class EPADSFederalConnector(BaseConnector):
         notices = []
         seen = set()
         page = 1
-        while page <= settings.live_max_pages:
+        while page <= self.pages_allowed():
             left, estimate = self.scan_budget()
             if left < estimate:
                 # Not enough time left for another page. Stop with what has

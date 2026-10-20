@@ -165,7 +165,7 @@ class PPRAPunjabConnector(BaseConnector):
         state = self._state(html)
         targets = self._pager_targets(html)
         page = 2
-        while page <= settings.live_max_pages:
+        while page <= self.pages_allowed():
             left, estimate = self.scan_budget()
             if left < estimate:
                 # Not enough time left for another page. Stop with what has

@@ -19,7 +19,14 @@ ACTIVE_STATES = {
 }
 
 
-def run_source(db, source) -> dict:
+def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=None) -> dict:
+    """Read one source and file what it found.
+
+    The budgets are per-scan overrides. A read that has to fit inside a tight
+    window — the first read of a freshly started deployment, for instance —
+    can ask for fewer pages and a shorter deadline without changing the
+    settings for every other scan.
+    """
     from app.connectors.registry import get_connector
     from app.services import normalizer
 
@@ -29,6 +36,12 @@ def run_source(db, source) -> dict:
         source.health = "no_adapter"
         db.commit()
         return {"error": "no_adapter"}
+    if page_budget is not None:
+        connector.page_budget = page_budget
+    if scan_seconds is not None:
+        connector.scan_seconds = scan_seconds
+    if connect_timeout is not None:
+        connector.connect_timeout = connect_timeout
 
     notices = connector.fetch_listing() or []
     raw = getattr(connector, "last_raw", None)

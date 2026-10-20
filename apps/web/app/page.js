@@ -79,6 +79,12 @@ export default function DashboardPage() {
         text: `Live reading: ${read} ${count}${other} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
       };
     }
+    if (feed.portals_never_read) {
+      return {
+        tone: "info",
+        text: `Live reading: ${read} ${count}${other} ${feed.portals_never_read} portal(s) have not been read yet — press Scan in the source register to read them.`,
+      };
+    }
     if (feed.stale) {
       return {
         tone: "err",

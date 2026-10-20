@@ -7,6 +7,14 @@ class BaseConnector:
     adapter = "base"
     label = "Base connector"
 
+    # Per-scan overrides. A scan that has to fit inside a tight budget — the
+    # first read of a freshly started deployment, for instance — can ask for
+    # fewer pages, a shorter deadline and a shorter connect timeout without
+    # changing the settings for every other scan.
+    page_budget = None
+    scan_seconds = None
+    connect_timeout = None
+
     def __init__(self, source):
         self.source = source
         # Notices are read from the authority's listing page; the portal home
@@ -53,7 +61,14 @@ class BaseConnector:
             min_interval=settings.live_min_interval,
             retries=settings.live_retries,
             browser_ua=settings.live_browser_ua,
+            connect_timeout=self.connect_timeout or settings.live_connect_timeout,
         )
+
+    def pages_allowed(self) -> int:
+        """How many listing pages this scan may walk."""
+        if self.page_budget is not None:
+            return max(1, int(self.page_budget))
+        return settings.live_max_pages
 
     def scan_budget(self):
         """How long this source's read has left, and what one request costs.
@@ -75,8 +90,8 @@ class BaseConnector:
         # A request is costed above the average, so that a slow one still
         # finishes inside the budget.
         estimate = max(settings.live_min_interval, average) * 1.5
-        left = settings.live_scan_deadline - elapsed
-        return left, estimate
+        limit = self.scan_seconds if self.scan_seconds is not None else settings.live_scan_deadline
+        return limit - elapsed, estimate
 
     def note_request(self):
         """Note that a request was made, for the estimate above."""

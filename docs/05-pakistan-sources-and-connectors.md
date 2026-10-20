@@ -283,6 +283,8 @@ variable:
 | `BMS_LIVE_MAX_PAGES` | 3 | Listing pages walked per source in one scan. |
 | `BMS_LIVE_MAX_DETAILS` | 2 | Detail pages read per source in one scan. |
 | `BMS_LIVE_SCAN_DEADLINE` | 32 | Seconds a source's read may spend on the network. |
+| `BMS_LIVE_CONNECT_TIMEOUT` | 10 | Seconds allowed to open a connection to a portal. |
+| `BMS_LIVE_STARTUP_BUDGET` | 20 | Seconds a freshly started deployment may spend reading the portals before it serves its first request. |
 | `BMS_LIVE_LOOKBACK_DAYS` | 60 | How far back to read a portal that publishes its whole history at once. |
 | `BMS_LIVE_BROWSER_UA` | true | Whether a live read presents a browser User-Agent (see 11.3). |
 
@@ -364,6 +366,14 @@ and the dashboard is simply always live. The review deployment on Vercel gives e
 own database, so a new instance starts with the register but no tenders; the **Scan** button in the
 source register reads a portal on demand, one source at a time, so that a portal which is slow or
 unreachable never holds up the others.
+
+**The first read of a fresh instance.** A dashboard that announces live reading while showing no
+tenders is not much use, so an instance that starts with an empty database reads the portals once
+before it serves its first request. That read is deliberately small — one page per source, a short
+deadline, a short connect timeout — and it stops when its budget is spent, because it happens
+inside the first request. What was read is committed source by source, so it is kept even if the
+budget runs out half way. The federal portals answer quickly from anywhere, so they are read
+first; Punjab's answers only from inside Pakistan and is often not reached within the budget.
 
 A scan that returns no notices marks the source **degraded** rather than healthy — a portal that
 answers but yields nothing has changed shape under us, and that is a drift signal.
