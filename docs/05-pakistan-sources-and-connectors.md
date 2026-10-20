@@ -304,6 +304,13 @@ Only public pages are read. The supplier registration, captcha and bid-submissio
 portals are never touched, and no credential is ever stored or sent — the system never signs in to
 a portal, and submission stays a human act (D-06).
 
+**PPRA Punjab answers only from inside Pakistan.** Its e-Procurement host (`eproc.punjab.gov.pk`)
+does not accept a connection from outside the country: a read from the deployed API times out on
+the connection, while the same read from a host in Pakistan returns the grid. The other four
+portals answer from anywhere. So the Punjab connector works, and the deployed dashboard reports
+that one portal could not be read rather than quietly showing nothing for it; running the API on a
+host with a route into Pakistan brings Punjab in as well.
+
 ### 11.3 Reading as a browser, and why
 
 Some of these portals drop a client that does not look like a browser. NTDC answers **403** to a
@@ -366,6 +373,7 @@ dashboard. Re-run the capture when a portal changes and the tests tell you what 
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
 | Source health `degraded`, 0 notices | Portal layout changed, or the listing moved | Re-run `capture_golden.py`, read the diff, update the parser |
+| Source health `error`, "could not connect" | The portal does not accept connections from this host | PPRA Punjab's e-Procurement portal answers only from inside Pakistan. Run the API on a host with a route into Pakistan |
 | Source health `error` | Portal unreachable, or the TLS fingerprint was rejected | Check the portal by hand; confirm `curl_cffi` is installed (`pip install -r requirements.txt`) |
 | Records appear but with no closing date | The portal does not publish one | Expected for EPADS, NTDC and WAPDA; the deadline arrives with the notice document at Gate 2 |
 | Records appear with a document link instead of a page | The portal has no per-notice page | Expected for PPRA Punjab; the link opens the authority's own notice document |

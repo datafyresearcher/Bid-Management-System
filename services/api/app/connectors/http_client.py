@@ -38,6 +38,27 @@ class FetchError(RuntimeError):
     """A portal could not be read."""
 
 
+def _is_connection_failure(exc: Exception) -> bool:
+    """Whether the host could not be reached at all.
+
+    A portal that answered and refused is a different matter from a portal
+    that cannot be reached from here — the first may be worth another try,
+    the second will not answer however long we wait.
+    """
+    text = str(exc).lower()
+    markers = (
+        "could not connect",
+        "failed to connect",
+        "connection refused",
+        "connection timed out",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "no route to host",
+        "network is unreachable",
+    )
+    return any(marker in text for marker in markers)
+
+
 class LiveClient:
     """A polite, retrying reader for public portal pages."""
 
@@ -49,9 +70,15 @@ class LiveClient:
         retries: int = 2,
         impersonate: bool = True,
         browser_ua: bool = True,
+        connect_timeout: float = 10.0,
     ):
         self.user_agent = user_agent or "AHTE-BMS/0.1 (bid desk; contact admin@ahte.local)"
         self.timeout = timeout
+        # A host that cannot be reached at all is not going to be reached by
+        # waiting longer. This is the time allowed to open the connection,
+        # and it is kept short so an unreachable portal is reported as such
+        # quickly instead of stalling a scan.
+        self.connect_timeout = connect_timeout
         self.min_interval = min_interval
         self.retries = max(0, retries)
         self.impersonate = impersonate and HAS_CURL_CFFI
@@ -94,6 +121,7 @@ class LiveClient:
             base_headers.update(headers)
 
         last_error = None
+        connection_failures = 0
         for attempt in range(self.retries + 1):
             self._wait()
             try:
@@ -105,12 +133,12 @@ class LiveClient:
                         impersonate="chrome124",
                         headers=base_headers,
                         data=data,
-                        timeout=self.timeout,
+                        timeout=(self.connect_timeout, self.timeout),
                         allow_redirects=True,
                     )
                 else:
                     with httpx.Client(
-                        timeout=self.timeout,
+                        timeout=httpx.Timeout(self.timeout, connect=self.connect_timeout),
                         follow_redirects=True,
                         headers=base_headers,
                         verify=False,
@@ -121,6 +149,16 @@ class LiveClient:
                 return _decode(response)
             except Exception as exc:
                 last_error = exc
+                if not _is_connection_failure(exc):
+                    # The portal answered, and said no. Repeating the request
+                    # will not change the answer.
+                    break
+                connection_failures += 1
+                if connection_failures > 1:
+                    # The host cannot be reached from here. One more try was
+                    # had; trying again would only hammer a portal that is
+                    # not answering.
+                    break
                 if attempt < self.retries:
                     backoff = 2 ** attempt
                     logger.warning("Fetch failed (%s); retrying in %ss", exc, backoff)
