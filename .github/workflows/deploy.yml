@@ -99,11 +99,15 @@ jobs:
       # cron work without it. Create it once in the repository:
       #   gh secret set CRON_SECRET --body "$(openssl rand -hex 24)"
       - name: Give the scheduler its secret
-        if: ${{ secrets.CRON_SECRET != '' }}
         working-directory: services/api
         env:
           CRON_SECRET_VALUE: ${{ secrets.CRON_SECRET }}
-        run: vercel env add CRON_SECRET --environment production --value "$CRON_SECRET_VALUE" --force --yes --token="$VERCEL_TOKEN"
+        run: |
+          if [ -z "$CRON_SECRET_VALUE" ]; then
+            echo "::notice::CRON_SECRET is not set as a repository secret, so the scheduled scan and digest stay off. Enable them with: gh secret set CRON_SECRET --body \"$(openssl rand -hex 24)\""
+            exit 0
+          fi
+          vercel env add CRON_SECRET --environment production --value "$CRON_SECRET_VALUE" --force --yes --token="$VERCEL_TOKEN"
 
       - name: Deploy to production
         working-directory: services/api
