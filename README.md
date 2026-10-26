@@ -140,7 +140,14 @@ npm install
 npm run dev -- --port 3001        # proxies API at the URL in .env.local
 ```
 
-### Demo credentials
+### Demo credentials (fixtures mode only)
+
+These accounts are seeded when `BMS_FIXTURES=true` — the demo pipeline. A
+deployment reading the live portals seeds only the administrator, whose
+password comes from `BMS_ADMIN_PASSWORD`, and everyone else is created in the
+app. The sign-in screen no longer prefills any credentials; demo one-click
+accounts appear only when the web app is built with
+`NEXT_PUBLIC_DEMO_MODE=true`.
 
 | Email | Password | Role |
 |---|---|---|
@@ -291,6 +298,78 @@ To run a deployment without pushing:
 gh workflow run deploy.yml
 ```
 
+## Production operations
+
+The deployed system reads the live portals and holds real tender data. The
+defaults below are what make that safe to run unattended.
+
+### Sign-in and accounts
+
+* **The demo passwords only exist in fixtures mode.** A deployment with
+  `BMS_FIXTURES=false` seeds no accounts at all rather than creating one with
+  a password printed in this repository. Create real users in *Admin → Users*.
+* **Sessions are refused until the signing key is set.** Sign-in answers 503
+  while `BMS_SECRET_KEY` is left at its default on a live deployment, because
+  that default is in the repository and sessions signed with it are forgeable.
+* **Rotate or recover the admin password with `BMS_ADMIN_PASSWORD`.** Set it,
+  redeploy, sign in with the new password. On every start the API checks the
+  stored hash and rotates only when it differs.
+* **Failed sign-ins are rate-limited** (default 10 failures per client+account
+  per 5 minutes → HTTP 429). The limit makes password guessing slow; it is
+  tuned with `BMS_LOGIN_MAX_ATTEMPTS` / `BMS_LOGIN_WINDOW_SECONDS`.
+* **The health endpoint hides its internals.** Anonymous callers get
+  `{"status", "fixtures"}` — what the platform check and the CI smoke test
+  need. Database contents and LLM configuration are reported only to a signed-in
+  administrator.
+
+### Scheduled work (daily scan + digest)
+
+A serverless deployment has no process that wakes up on its own, so the daily
+routine runs as one scheduled request, `GET /api/cron/tick` (07:00 PKT, from
+`services/api/vercel.json`): read every enabled portal, run the SLA
+watchdogs, score what is waiting, then send the digest.
+
+* **It is guarded and fails closed.** The request must carry
+  `Authorization: Bearer <CRON_SECRET>`; a deployment without a `CRON_SECRET`
+  configured refuses cron work (HTTP 503) rather than running it for whoever
+  finds the URL.
+* **Enable it** by adding the secret to the repository and redeploying:
+  `gh secret set CRON_SECRET --body "$(openssl rand -hex 24)"`. The pipeline
+  pushes it to the API project automatically. On the Vercel dashboard it can
+  also be set directly as `CRON_SECRET`.
+* Docker deployments don't need the cron route: run with
+  `BMS_SCHEDULER_ENABLED=true` and the in-process scheduler does the same
+  work every `BMS_SCAN_INTERVAL_SECONDS`.
+
+### Email delivery (the executive digest)
+
+The digest is the ranked brief: the top tenders by fit score, the ones
+closing within 72 hours, and the gate/queue counts — the few decisions worth
+attention, not an alert list. A same-day alert also goes out when new tenders
+clear screening.
+
+* **Without SMTP settings** nothing is lost: the brief is recorded in the
+  dashboard notification inbox and the send is marked `sent=false`.
+* **With SMTP settings** (`BMS_SMTP_HOST`, `BMS_SMTP_PORT`, `BMS_SMTP_USER`,
+  `BMS_SMTP_PASSWORD`, `BMS_SMTP_FROM`) it is emailed to `BMS_DIGEST_RECIPIENTS`,
+  or to the active admin/bid-manager/management accounts when that is empty.
+* **Check the configuration before relying on it:** *Admin → Digest → Preview*
+  (`GET /api/admin/digest/preview`) returns the brief as it would be sent;
+  `POST /api/admin/digest/send` delivers it now.
+
+### Portal reads
+
+Live reads verify TLS certificates by default (`BMS_LIVE_VERIFY_TLS=true`).
+The one `verify=False` fallback has been removed; turning verification off is
+now an explicit, logged configuration choice for a portal whose certificate
+chain an inspection appliance breaks.
+
+### Container hardening
+
+The API image runs as a non-root user with a `HEALTHCHECK` on
+`/api/health`, and its `.dockerignore` keeps local `bms.db` files and test
+code out of the image.
+
 ## Key terminology
 
 See the EN-UR glossary in `docs/10-domain-expert-review-pack.md#glossary`.
@@ -311,10 +390,10 @@ BID Management System/
 │   ├── app/
 │   │   ├── main.py            ← app factory, CORS, scheduler hook
 │   │   ├── config.py  db.py  models.py  security.py  serializers.py
-│   │   ├── routers/           ← auth, dashboard, opportunities, gates, leads, kb, sources, admin, proposals
+│   │   ├── routers/           ← auth, dashboard, opportunities, gates, leads, kb, sources, admin, proposals, cron
 │   │   ├── services/          ← workflow (state machine + gates), scorer, extractor, risk,
 │   │   │                        documents, drafter, submission, leads, normalizer, jobs, audit,
-│   │   │                        risk_rules, evaluation, ai_quality…
+│   │   │                        digest + emailer (the executive brief), risk_rules, evaluation, ai_quality…
 │   │   ├── connectors/        ← source adapters (PPRA Punjab, EPMS Federal, fixture JSON, email inbox)
 │   │   └── llm/               ← provider abstraction + prompts + schemas + deterministic engine
 │   ├── goldset/               ← labelled tender documents + cases.json (accuracy ground truth)

@@ -94,6 +94,17 @@ jobs:
         working-directory: services/api
         run: vercel env add BMS_FIXTURES --environment production --value false --force --yes --token="$VERCEL_TOKEN"
 
+      # The daily scan and digest run as a scheduled request to /api/cron/tick.
+      # The host signs that request with this secret, and the API refuses
+      # cron work without it. Create it once in the repository:
+      #   gh secret set CRON_SECRET --body "$(openssl rand -hex 24)"
+      - name: Give the scheduler its secret
+        if: ${{ secrets.CRON_SECRET != '' }}
+        working-directory: services/api
+        env:
+          CRON_SECRET_VALUE: ${{ secrets.CRON_SECRET }}
+        run: vercel env add CRON_SECRET --environment production --value "$CRON_SECRET_VALUE" --force --yes --token="$VERCEL_TOKEN"
+
       - name: Deploy to production
         working-directory: services/api
         run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"

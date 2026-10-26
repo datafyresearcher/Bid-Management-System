@@ -22,6 +22,8 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [userForm, setUserForm] = useState({ email: "", name: "", role: "bid_manager", password: "" });
   const [mapForm, setMapForm] = useState({ source_code: "", source_category: "", internal_category: "" });
+  const [digestPreview, setDigestPreview] = useState(null);
+  const [digestBusy, setDigestBusy] = useState(false);
 
   const load = useCallback(() => {
     api("/api/admin/users").then(setUsers).catch((e) => setError(e.message));
@@ -44,6 +46,41 @@ export default function AdminPage() {
       setError(e.message);
     } finally {
       setEvalBusy(false);
+    }
+  };
+
+  const previewDigest = async () => {
+    setDigestBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      const result = await api("/api/admin/digest/preview");
+      setDigestPreview(result.text);
+      setInfo(
+        `The brief lists ${result.ranked} ranked tender(s); ${result.overdue_gates} gate(s) past SLA, ${result.pending_gates} open.`
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDigestBusy(false);
+    }
+  };
+
+  const sendDigestNow = async () => {
+    setDigestBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      const result = await api("/api/admin/digest/send", { method: "POST" });
+      setInfo(
+        result.sent
+          ? `Digest sent to ${result.recipients} recipient(s).`
+          : "Digest built but not emailed — this deployment has no SMTP account (BMS_SMTP_HOST). It is recorded in the notification inbox."
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDigestBusy(false);
     }
   };
 
@@ -304,6 +341,23 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        </div>
+        <div className="card">
+          <h3>
+            Daily digest{" "}
+            <button className="btn small" onClick={previewDigest} disabled={digestBusy}>
+              {digestBusy ? "Working…" : "Preview"}
+            </button>{" "}
+            <button className="btn small primary" onClick={sendDigestNow} disabled={digestBusy}>
+              Send now
+            </button>
+          </h3>
+          <p className="muted">
+            The ranked executive brief — the tenders worth attention, the ones closing soon, and the
+            gate counts. It is sent to the configured recipients every morning by the scheduler; this
+            checks what it says and that email delivery works.
+          </p>
+          {digestPreview ? <pre className="muted" style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{digestPreview}</pre> : null}
         </div>
       </div>
     </>

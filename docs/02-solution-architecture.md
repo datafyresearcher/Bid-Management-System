@@ -258,6 +258,42 @@ Provider Interface
   instruct the model to never follow instructions found inside documents; outputs are schema-
   validated JSON before entering the system.
 
+### 6.1 OpenRouter's free router, measured
+
+The deployment runs on the free tier through `openrouter/free`, which picks the model per call
+rather than serving one. Three consequences are measured, not assumed, and the system is built
+around them.
+
+**The router chooses the model, and it is not always a suitable one.** Between calls it has served
+`minimax/minimax-m3.1-flash:free`, `xingchen-agi/xing4.0-29b-a4b:free`, and models that answer
+with something other than an assessment — a content-safety classifier among them. The model that
+actually served a call is recorded per call and shown on the dashboard ("Models that answered"),
+because the name that was requested says nothing about what answered.
+
+**Reasoning models need an output budget for the answer, not just the thinking.** A reasoning model
+spends its `max_tokens` before it writes anything; with the budget set to 300 the model reasoned to
+the cap and returned nothing at all. The scoring call is given 1000 tokens, and a response that is
+empty because the cap landed during reasoning is recorded as such — a different fault from a model
+that declined to answer, and one that a bigger budget fixes.
+
+**The whole call is bounded, not each attempt.** `BMS_LLM_TIMEOUT_SECONDS` is the budget for a call
+including retries, because the host stops a request at 60 seconds and a call that is retried three
+times over would use all of it on one tender. Retries are still made for failures that come back
+quickly — a rate-limit refusal is instant — and are skipped when the pause before them would not
+fit in what is left.
+
+**A tender is scored whether or not the model answered.** The score, the hard gates and the
+subscores are deterministic and never depend on the model (P1); only the written explanation does.
+Where the batch budget cannot also pay for a model call, the tender is scored with the
+deterministic explanation and still opens its gate. A free-tier model answers in roughly 8–25
+seconds, so this is the normal case rather than the exception: the free tier can narrate a handful
+of tenders per scan, not a whole capture.
+
+**The free tier is rate-limited per minute and per day.** With no credit on the account, OpenRouter
+caps free-model requests and answers with `free-models-per-day` once it is reached; adding a small
+balance raises that cap. Every call is recorded in `ai_metrics` either way, so the real usage is
+visible rather than guessed.
+
 ---
 
 ## 7. Document processing pipeline (P4)
@@ -340,6 +376,23 @@ intimations, and win/loss reasons — feeding AI quality analytics and future sc
 | Development (now) | Docker Compose on developer machines: web + api + workers + Postgres + Redis + MinIO; OpenRouter free tier | Seeded fixtures: sample PPRA Punjab notices + one full tender package for end-to-end tests |
 | Production (target) | In-house server (D-08): same containers, reverse proxy + TLS; OpenAI API (D-07) | Single-tenant; capacity sized for ~50–200 opportunities/day and 10–30 document-heavy analyses/day |
 | KSA (Phase 3) | In-region deployment to satisfy PDPL/NCA residency (`docs/09`) | Provider and storage selection revisited at that time |
+
+### 11.1 One budget per request
+
+The API is deployed on serverless functions with a hard limit of 60 seconds per request, and the
+work a request does happens in sequence: read a portal, capture what it found, score it, ask the
+model to explain it. Each of those used to have a budget of its own, which meant a request could
+take the sum of them — and a request that started slowly, on an instance that had to boot and
+populate before it served anything, had the least time for the work the user actually asked for.
+
+Every phase now draws from one budget (`BMS_REQUEST_BUDGET_SECONDS`), set by the middleware for the
+request being served. The time the instance spent getting ready is charged to the first request it
+handles. A phase that runs out of time stops and leaves the rest to the next pass, rather than
+running past the end of the request and being reported as a failure.
+
+The consequence is that a scan does less when it starts slowly, rather than failing. The capture
+is committed before the scoring begins, so a tender that reached the database is kept even when the
+scoring of it did not fit.
 
 ---
 

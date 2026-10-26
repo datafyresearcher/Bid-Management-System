@@ -7,12 +7,52 @@ from app.config import settings
 
 logger = logging.getLogger("bms.db")
 
+# The application runs in two places. On a developer machine it talks to a
+# local SQLite file; when it is deployed it talks to PostgreSQL on Supabase.
+# The two need different engines, so the difference is decided once here.
+#
+# Why PostgreSQL for the deployment: a serverless instance is a throwaway
+# container with a throwaway disk. A SQLite file written by one request is
+# gone by the next one, so a scan's results — and the review gates that scan
+# opened — vanished between two clicks. A managed PostgreSQL database is
+# shared by every instance, so what a scan writes is still there for the next
+# request to read.
+IS_POSTGRES = settings.database_url.startswith("postgres")
+
 connect_args = {}
-if settings.database_url.startswith("sqlite"):
+engine_kwargs = {"future": True}
+
+if IS_POSTGRES:
+    # The connection is pooled, not thrown away. A sessionless pool would close
+    # the connection every time a transaction commits, so every write would
+    # pay for a fresh DNS lookup and TLS handshake — which, to a database on
+    # another continent, is far more expensive than the write itself.
+    engine_kwargs["pool_size"] = settings.db_pool_size
+    engine_kwargs["max_overflow"] = settings.db_max_overflow
+    engine_kwargs["pool_timeout"] = settings.db_pool_timeout
+    engine_kwargs["pool_recycle"] = settings.db_pool_recycle
+    # A dropped connection is detected on checkout rather than surfacing as a
+    # failed query halfway through a scan.
+    engine_kwargs["pool_pre_ping"] = True
+    connect_args = {
+        # psycopg's automatic prepared statements are not safe behind a
+        # transaction-mode pooler, so they are switched off.
+        "prepare_threshold": None,
+    }
+    if "sslmode" not in settings.database_url:
+        connect_args["sslmode"] = settings.db_sslmode
+elif settings.database_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(settings.database_url, connect_args=connect_args, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
+# Objects keep their values after a commit instead of being expired and read
+# back. The application writes a row and then reads it again in the same
+# request more often than not, and on a database that is reached over the
+# network each of those reads is a round trip worth not paying.
+SessionLocal = sessionmaker(
+    bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True
+)
+
 
 
 class Base(DeclarativeBase):
@@ -48,6 +88,9 @@ ADDED_COLUMNS = {
         ("tier", "VARCHAR(8) DEFAULT ''"),
         ("access", "VARCHAR(40) DEFAULT 'public'"),
         ("listing_url", "VARCHAR(500) DEFAULT ''"),
+    ],
+    "company_profile": [
+        ("email", "VARCHAR(200) DEFAULT ''"),
     ],
 }
 
@@ -139,7 +182,20 @@ def backfill_opportunity_sources():
 def init_db():
     from app import models
 
-    Base.metadata.create_all(bind=engine)
+    try:
+        # Asking the database which tables it already has costs one question.
+        # Letting `create_all` work that out table by table costs one
+        # question per table, which on a database reached over the network is
+        # a noticeable part of a cold start.
+        existing = set(inspect(engine).get_table_names())
+        missing = [table for name, table in Base.metadata.tables.items() if name not in existing]
+        if missing:
+            Base.metadata.create_all(bind=engine, tables=missing, checkfirst=False)
+    except Exception as exc:
+        # Two serverless instances can start at the same moment and both try
+        # to create the same table. The loser of that race sees "already
+        # exists", which means the schema is there and nothing is broken.
+        logger.info("Schema creation reported: %s", exc)
     migrate_columns()
     # Order matters: the registry must exist before opportunities can be
     # pointed at a source row.

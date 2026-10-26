@@ -84,6 +84,7 @@ class LiveClient:
         impersonate: bool = True,
         browser_ua: bool = True,
         connect_timeout: float = 10.0,
+        verify_tls: bool | None = None,
     ):
         self.user_agent = user_agent or "AHTE-BMS/0.1 (bid desk; contact admin@ahte.local)"
         self.timeout = timeout
@@ -95,6 +96,15 @@ class LiveClient:
         self.min_interval = min_interval
         self.retries = max(0, retries)
         self.impersonate = impersonate and HAS_CURL_CFFI
+        # Certificates are verified unless a deployment turns that off for a
+        # portal whose chain an inspection appliance breaks. It is off only
+        # when someone said so in the environment, and the logs say so every
+        # time a client is built that way.
+        from app.config import settings
+
+        self.verify = settings.live_verify_tls if verify_tls is None else verify_tls
+        if not self.verify:
+            logger.warning("TLS verification is OFF for portal reads (BMS_LIVE_VERIFY_TLS=false)")
         # With browser impersonation the request has to carry the browser's
         # own User-Agent, or the portal refuses it. Overriding it with our own
         # string is what earns a 403 from NTDC.
@@ -148,13 +158,14 @@ class LiveClient:
                         data=data,
                         timeout=(self.connect_timeout, self.timeout),
                         allow_redirects=True,
+                        verify=self.verify,
                     )
                 else:
                     with httpx.Client(
                         timeout=httpx.Timeout(self.timeout, connect=self.connect_timeout),
                         follow_redirects=True,
                         headers=base_headers,
-                        verify=False,
+                        verify=self.verify,
                     ) as client:
                         response = client.request(method, url, data=data)
                 if response.status_code >= 400:

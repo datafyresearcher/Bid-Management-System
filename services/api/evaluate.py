@@ -8,10 +8,20 @@ Exits non-zero if the run itself failed, so it can be wired into CI.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# The gold set measures the deterministic pipeline, not whatever model a live
+# router happens to pick today. A configured OpenRouter/OpenAI key would
+# otherwise make the gate answer with a different model run to run — the same
+# document, different risk-flag counts — and a gate that fails on a bad day at
+# the router is not a gate. This matches the hermetic setup the test suite
+# uses (tests/conftest.py): the configured provider is exercised against the
+# deployment, never inside the accuracy harness.
+os.environ["BMS_LLM_PROVIDER"] = "mock"
 
 from app.services import evaluation  # noqa: E402
 

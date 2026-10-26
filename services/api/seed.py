@@ -30,19 +30,69 @@ USERS = [
     ("viewer@ahte.local", "Viewer", "viewer", "view123"),
 ]
 
+ADMIN_EMAIL = USERS[0][0]
+
 # The authorized source registry lives in app/source_registry.py. It is applied on
 # every application start so a running database never keeps a stale portal URL.
 
 
 def seed_users(db):
+    """Create the sign-in accounts.
+
+    A deployment reading the live portals is not a demo. It gets one
+    account — the administrator — whose password comes from
+    ``BMS_ADMIN_PASSWORD``, and no demo accounts at all: everyone else is
+    created by the administrator through the app, with passwords nobody has
+    printed in a repository. Fixtures mode keeps the demo accounts so the
+    whole pipeline can be walked without setup.
+    """
     created = 0
-    for email, name, role, password in USERS:
+    accounts = USERS if settings.fixtures else [
+        (ADMIN_EMAIL, "System Admin", "admin", settings.admin_password or "")
+    ]
+    for email, name, role, password in accounts:
         exists = db.execute(select(User).where(User.email == email)).scalars().first()
-        if not exists:
-            db.add(User(email=email, name=name, role=role, password_hash=hash_password(password)))
-            created += 1
+        if exists:
+            continue
+        if not password:
+            import logging
+
+            logging.getLogger("bms.seed").critical(
+                "Refusing to create the administrator account with a known default "
+                "password. Set BMS_ADMIN_PASSWORD and start again."
+            )
+            continue
+        db.add(User(email=email, name=name, role=role, password_hash=hash_password(password)))
+        created += 1
     db.commit()
     return created
+
+
+def apply_admin_password(db):
+    """Rotate the administrator's password to the one in the environment.
+
+    Called on every start. Setting ``BMS_ADMIN_PASSWORD`` on a live
+    deployment is therefore the documented way to change the admin password,
+    including recovering one that was lost. The rotation only happens when
+    the stored hash does not already match, so a start-up costs one password
+    verification, not a write.
+    """
+    import logging
+
+    from app.security import verify_password
+
+    password = (settings.admin_password or "").strip()
+    if not password:
+        return False
+    admin = db.execute(select(User).where(User.email == ADMIN_EMAIL)).scalars().first()
+    if not admin:
+        return False
+    if verify_password(password, admin.password_hash):
+        return False
+    admin.password_hash = hash_password(password)
+    db.commit()
+    logging.getLogger("bms.seed").info("Administrator password rotated from BMS_ADMIN_PASSWORD")
+    return True
 
 
 def seed_kb(db):
@@ -50,13 +100,14 @@ def seed_kb(db):
     if company:
         return False
     company = CompanyProfile(
-        name="AHTE (Pvt) Ltd",
-        legal_name="AHTE Engineering & Transmission (Pvt) Ltd",
+        name="AL-Hussain Traders & Engineers PVT. LTD.",
+        legal_name="AL-Hussain Traders & Engineers PVT. LTD.",
         secp="SECP-0123456 (demo)",
         ntn="7654321-8 (demo)",
         tax_status="Active",
         address="Lahore, Pakistan",
-        website="https://ahte.example",
+        website="https://www.ahte.com.pk",
+        email="info@ahte.com.pk",
         summary="Power-sector EPC contractor executing NTDC and donor-funded transmission & substation works with own tower, stringing and testing resources.",
         blacklisted=False,
     )
@@ -241,8 +292,11 @@ def run_demo_pipeline(db):
         email_inbox.import_leads(db, email_source)
 
 
-def main():
-    init_db()
+def main(init=True):
+    # The application already brings the schema up before it seeds, so the
+    # deployed start-up does not pay for the schema check twice.
+    if init:
+        init_db()
     db = SessionLocal()
     try:
         print(f"Users created: {seed_users(db)}")

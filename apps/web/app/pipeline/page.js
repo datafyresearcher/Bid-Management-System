@@ -16,26 +16,39 @@ const FILTERS = [
 export default function PipelinePage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
   const [state, setState] = useState(FILTERS[0][0]);
   const [sort, setSort] = useState("deadline");
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+      sort,
+    });
     if (state) params.set("state", state);
-    params.set("sort", sort);
-    params.set("page_size", "100");
     api(`/api/opportunities?${params.toString()}`)
       .then((data) => {
         setItems(data.items);
         setTotal(data.total);
       })
       .catch((e) => setError(e.message));
-  }, [state, sort]);
+  }, [state, sort, page, pageSize]);
+
+  // A new filter is a new view, so it starts at the first page.
+  useEffect(() => {
+    setPage(1);
+  }, [state, sort, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
 
   const groups = items.reduce((acc, o) => {
     const key = o.state;
@@ -71,6 +84,28 @@ export default function PipelinePage() {
         <button className="btn" onClick={load}>Refresh</button>
         <span className="muted">{total} item(s)</span>
       </div>
+
+      {total > 0 ? (
+        <div className="pager">
+          <p className="muted mb-14">Showing {first}–{last} of {total} item(s).</p>
+          <div className="row-actions">
+            <button className="btn" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              ← Previous
+            </button>
+            <span className="muted">
+              Page {page} of {pages}
+            </span>
+            <button className="btn" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>
+              Next →
+            </button>
+            {page < pages ? (
+              <button className="btn" onClick={() => setPage(pages)}>
+                Last page
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {Object.keys(groups).length === 0 ? <p className="muted">Nothing in this view.</p> : null}
 

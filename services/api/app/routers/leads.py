@@ -35,6 +35,10 @@ class StatusIn(BaseModel):
 
 @router.get("")
 def list_leads(status: str = "", q: str = "", page: int = 1, page_size: int = 50, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # A page of a few thousand rows would not survive the trip to a database
+    # over the network; the UI asks for tens at a time, and anything larger
+    # is paged through like anywhere else.
+    page_size = max(1, min(page_size, 100))
     query = select(Lead)
     if status:
         statuses = [s.strip().capitalize() for s in status.split(",") if s.strip()]

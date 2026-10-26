@@ -26,10 +26,52 @@ BUYER_ALIASES = [
 ]
 
 
-def run(db, opp) -> Score:
+class ScoringContext:
+    """The company's own record, read once for a whole batch of tenders.
+
+    The profile, the licence, the track record and the latest financial year
+    are the same for every tender that is scored together. Reading them once
+    for the batch instead of once per tender is the difference between a
+    capture that finishes in seconds and one that spends all of its time
+    waiting for the database.
+    """
+
+    def __init__(self, company, license_row, projects, latest_fy):
+        self.company = company
+        self.license = license_row
+        self.projects = projects
+        self.latest_fy = latest_fy
+
+
+def load_context(db) -> ScoringContext:
+    from sqlalchemy import desc
+
+    from app.models import FinancialYear
+
     company = db.execute(select(CompanyProfile)).scalars().first()
     license_row = db.execute(select(License).where(License.approved == True)).scalars().first()  # noqa: E712
     projects = db.execute(select(ProjectExperience).where(ProjectExperience.approved == True)).scalars().all()  # noqa: E712
+    latest_fy = db.execute(select(FinancialYear).order_by(desc(FinancialYear.fiscal_year))).scalars().first()
+    return ScoringContext(company, license_row, projects, latest_fy)
+
+
+def run(db, opp, ctx=None, deadline=None, narrate=True) -> Score:
+    """Score one tender.
+
+    ``deadline`` is an absolute ``time.monotonic()`` value handed to the model
+    call so a slow answer cannot hold the request open past its budget. The
+    score itself never depends on the model: only the narrative does.
+
+    ``narrate=False`` skips the model entirely and writes the deterministic
+    rationale. That is the difference between a tender that is scored and a
+    tender that is only waiting for a slow model to answer it, and on a
+    free-tier model the difference is large.
+    """
+    if ctx is None:
+        ctx = load_context(db)
+    company = ctx.company
+    license_row = ctx.license
+    projects = ctx.projects
 
     failures = []
     warnings = []
@@ -63,11 +105,14 @@ def run(db, opp) -> Score:
     if opp.tender_type in ("Auction-Disposal",):
         failures.append({"gate": "strategy", "reason": "Auction/disposal is outside strategy scope"})
 
-    subscores = _subscores(opp, projects, db)
+    subscores = _subscores(opp, projects, ctx.latest_fy)
     total = round(sum(v["score"] for v in subscores.values()), 1)
     passed = len(failures) == 0
 
-    rationale = _rationale(db, opp, subscores, total, failures, warnings, projects)
+    rationale = _rationale(
+        db, opp, subscores, total, failures, warnings, projects,
+        deadline=deadline, narrate=narrate,
+    )
 
     score = Score(
         opportunity_id=opp.id,
@@ -122,6 +167,16 @@ def run(db, opp) -> Score:
         if pending_gate:
             if opp.state != f"GATE{pending_gate.gate}":
                 workflow.transition(db, opp, f"GATE{pending_gate.gate}", "rescored", detail=f"score {total}")
+            # The snapshot is what the reviewer reads, so it has to describe
+            # the score that is actually in front of them. Leaving the old
+            # one behind would put a stale rationale next to a fresh score.
+            pending_gate.inputs_snapshot = {
+                "score": total,
+                "subscores": subscores,
+                "rationale": rationale,
+                "failures": failures,
+            }
+            db.commit()
         else:
             workflow.transition(db, opp, "SCORED", "scoring_complete", detail=f"score {total}")
         workflow.open_gate(
@@ -142,7 +197,7 @@ def _urgent(opp) -> bool:
     return (opp.submission_deadline - utcnow()) < timedelta(days=7)
 
 
-def _subscores(opp, projects, db):
+def _subscores(opp, projects, latest_fy=None):
     text = normalize_key(f"{opp.title} {opp.description}")
     category = opp.category_internal
 
@@ -170,7 +225,7 @@ def _subscores(opp, projects, db):
 
     value = 7
     if opp.estimated_value:
-        fy = _latest_fy(db)
+        fy = latest_fy
         turnover = fy.turnover if fy else None
         if turnover:
             amount = opp.estimated_value if opp.currency == "PKR" else opp.estimated_value * 280
@@ -188,7 +243,7 @@ def _subscores(opp, projects, db):
                 margin = max(3, margin - 6 * (required_similar - available))
         required_turnover = thresholds.get("turnover")
         if required_turnover:
-            fy = _latest_fy(db)
+            fy = latest_fy
             if not fy or fy.turnover < required_turnover:
                 margin = max(3, margin - 6)
     else:
@@ -221,7 +276,7 @@ def _latest_fy(db):
     return db.execute(select(FinancialYear).order_by(desc(FinancialYear.fiscal_year))).scalars().first()
 
 
-def _rationale(db, opp, subscores, total, failures, warnings, projects) -> str:
+def _rationale(db, opp, subscores, total, failures, warnings, projects, deadline=None, narrate=True) -> str:
     """Write the human-facing rationale for a score.
 
     The score itself is always deterministic. This function only narrates it.
@@ -229,7 +284,7 @@ def _rationale(db, opp, subscores, total, failures, warnings, projects) -> str:
     before it reaches the model.
     """
     provider = llm.get_provider()
-    if provider.enabled:
+    if provider.enabled and narrate:
         summary = (
             f"Tender: {sanitize_inline(opp.title, 200)}\n"
             f"Buyer: {sanitize_inline(opp.buyer_name, 120)}\n"
@@ -245,8 +300,9 @@ def _rationale(db, opp, subscores, total, failures, warnings, projects) -> str:
         result = provider.chat(
             prompts.SCORE_RATIONALE_V1["system"],
             prompts.fence_untrusted(summary, "SCORING INPUT"),
-            max_tokens=300,
+            max_tokens=settings.llm_score_max_tokens,
             task="score",
+            deadline=deadline,
         )
         llm.record_metric(db, "score", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():

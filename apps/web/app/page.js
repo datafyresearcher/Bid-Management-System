@@ -39,7 +39,8 @@ export default function DashboardPage() {
     setScanNote("");
     try {
       const result = await api(`/api/sources/${source.id}/scan`, { method: "POST" });
-      setScanNote(`${source.name}: read ${result.notices} notices, ${result.new} new.`);
+      const scored = result.scored ? `, ${result.scored} scored and waiting for a decision` : "";
+      setScanNote(`${source.name}: read ${result.notices} notices, ${result.new} new${scored}.`);
       load();
     } catch (err) {
       setScanNote(`${source.name}: could not be read — ${err.message}`);
@@ -139,7 +140,9 @@ export default function DashboardPage() {
         <div className="card">
           <div className="section-title">
             <h3>Your gate queue</h3>
-            <Link href="/review" className="btn small">Open review queue</Link>
+            <Link href="/review" className="btn small">
+              Open review queue{data.pending_gates_total ? ` (${data.pending_gates_total})` : ""}
+            </Link>
           </div>
           {data.pending_gates.length === 0 ? (
             <p className="muted">No pending gates for your role.</p>
@@ -184,6 +187,12 @@ export default function DashboardPage() {
               </table>
             </div>
           )}
+          {data.pending_gates_total > data.pending_gates.length ? (
+            <p className="muted mt-14">
+              Showing the {data.pending_gates.length} most urgent of {data.pending_gates_total}. The
+              review queue pages through the rest, and the tender inbox lists every captured tender.
+            </p>
+          ) : null}
         </div>
 
         <div className="card">
@@ -439,6 +448,35 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
+          {Object.keys(data.ai_quality.llm_by_model || {}).length ? (
+            <div className="mt-14">
+              <h4 className="muted" style={{ marginBottom: 6 }}>
+                Models that answered
+              </h4>
+              <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                A router picks the model per call, so this is the list that actually served the
+                work — not the model that was asked for.
+              </p>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Model</th><th>Calls</th><th>Invalid</th><th>Valid rate</th><th>Avg latency</th></tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(data.ai_quality.llm_by_model || {}).map(([model, m]) => (
+                      <tr key={model}>
+                        <td data-label="Model">{model}</td>
+                        <td data-label="Calls">{m.calls}</td>
+                        <td data-label="Invalid">{m.invalid}</td>
+                        <td data-label="Valid rate">{Math.round((m.valid_rate || 0) * 100)}%</td>
+                        <td data-label="Avg latency">{m.avg_latency_ms} ms</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </>

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.connectors.http_client import is_connection_failure
@@ -39,7 +39,15 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
     screened_out_count = sum(state_counts.get(state, 0) for state in CLOSED_STATES)
     submitted_count = sum(state_counts.get(state, 0) for state in OUTCOME_STATES)
 
-    gate_query = select(GateTask).where(GateTask.status.in_(["PENDING", "OVERDUE"])).order_by(GateTask.due_at)
+    gate_query = (
+        select(GateTask)
+        .where(GateTask.status.in_(["PENDING", "OVERDUE"]))
+        .order_by(GateTask.due_at)
+        # The tender behind each gate is loaded in one go rather than one at a
+        # time. A queue of hundreds of gates would otherwise ask the database
+        # the same question once per gate.
+        .options(selectinload(GateTask.opportunity))
+    )
     if user.role not in ("admin", "management"):
         gate_query = gate_query.where((GateTask.owner_role == user.role) | (GateTask.owner_user_id == user.id))
     pending_gates = db.execute(gate_query).scalars().all()

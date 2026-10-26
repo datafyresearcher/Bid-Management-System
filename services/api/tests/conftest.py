@@ -10,6 +10,12 @@ os.environ["BMS_STORAGE_DIR"] = str(TMP / "storage")
 os.environ["BMS_FIXTURES"] = "true"
 os.environ["BMS_SECRET_KEY"] = "test-secret"
 os.environ["BMS_SCHEDULER_ENABLED"] = "false"
+# The suite is hermetic and must not call a hosted model. The gold set
+# measures extraction fidelity against known answers, and a free-tier router
+# that answers with whatever model it happens to pick — sometimes nothing at
+# all — would make those assertions meaningless and the suite slow. The
+# configured provider is exercised against the deployment, not here.
+os.environ["BMS_LLM_PROVIDER"] = "mock"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:

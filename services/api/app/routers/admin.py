@@ -12,7 +12,7 @@ from app.models import CategoryMapping, DecisionAudit, User
 from app.security import require_roles
 from app.serializers import iso
 from app.security import hash_password
-from app.services import ai_quality, audit
+from app.services import ai_quality, audit, emailer
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -174,3 +174,42 @@ def audit_export(user: User = Depends(ADMIN), db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=audit_log.csv"},
     )
+
+
+@router.get("/digest/preview")
+def digest_preview(user: User = Depends(ADMIN), db: Session = Depends(get_db)):
+    """The brief as it would be sent, before it is sent.
+
+    The way to check that the digest is worth reading is to read it — this
+    returns exactly what the scheduled send would deliver, without mailing
+    anyone.
+    """
+    from app.services import digest
+
+    built = digest.build_digest(db)
+    return {
+        "ranked": len(built["ranked"]),
+        "closing": len(built["closing"]),
+        "waiting": built["waiting"],
+        "overdue_gates": built["overdue_gates"],
+        "pending_gates": built["pending_gates"],
+        "new_since_last": built["new_since_last"],
+        "text": digest.render_text(built),
+    }
+
+
+@router.post("/digest/send")
+def digest_send(user: User = Depends(ADMIN), db: Session = Depends(get_db)):
+    """Build and deliver the digest now.
+
+    The scheduled send runs on the host's cron; this is how an administrator
+    confirms the SMTP account works, or sends an extra brief on a busy day.
+    """
+    from app.services import digest
+
+    if not emailer.configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Email is not configured on this deployment: set BMS_SMTP_HOST and BMS_SMTP_FROM.",
+        )
+    return digest.send_digest(db)

@@ -4,8 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
 
+const PAGE_SIZE = 50;
+
 export default function ReviewPage() {
   const [gates, setGates] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState("PENDING,OVERDUE");
   const [role, setRole] = useState("");
   const [comments, setComments] = useState({});
@@ -14,14 +18,32 @@ export default function ReviewPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    const params = new URLSearchParams({ status });
+    const params = new URLSearchParams({
+      status,
+      limit: String(PAGE_SIZE),
+      offset: String((page - 1) * PAGE_SIZE),
+    });
     if (role) params.set("role", role);
     api(`/api/gates?${params.toString()}`).then(setGates).catch((e) => setError(e.message));
+    const countParams = new URLSearchParams({ status });
+    if (role) countParams.set("role", role);
+    api(`/api/gates/count?${countParams.toString()}`)
+      .then((data) => setTotal(data.total || 0))
+      .catch(() => setTotal(0));
+  }, [status, role, page]);
+
+  // A new filter is a new view, so it starts at the first page.
+  useEffect(() => {
+    setPage(1);
   }, [status, role]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const last = Math.min(page * PAGE_SIZE, total);
 
   const decide = async (gate, decision) => {
     setBusy(true);
@@ -74,6 +96,32 @@ export default function ReviewPage() {
       </div>
 
       {gates.length === 0 ? <p className="muted">No gates in this view.</p> : null}
+      {total > 0 ? (
+        <div className="pager">
+          <p className="muted mb-14">
+            Showing {first}–{last} of {total} gate(s).{" "}
+            {total > PAGE_SIZE
+              ? "Use the buttons below, or narrow the view by status or owner role."
+              : null}
+          </p>
+          <div className="row-actions">
+            <button className="btn" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              ← Previous
+            </button>
+            <span className="muted">
+              Page {page} of {pages}
+            </span>
+            <button className="btn" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>
+              Next →
+            </button>
+            {page < pages ? (
+              <button className="btn" onClick={() => setPage(pages)}>
+                Last page
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {gates.map((g) => {
         const dl = deadlineInfo(g.opportunity?.submission_deadline);

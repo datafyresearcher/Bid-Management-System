@@ -333,6 +333,9 @@ class CompanyProfile(Base):
     address = Column(String(400), default="")
     country = Column(String(10), default="PK")
     website = Column(String(300), default="")
+    # The address the bid desk publishes tenders to. Tender notices have to
+    # quote a contact, and this is the one the company reads from.
+    email = Column(String(200), default="")
     summary = Column(Text, default="")
     blacklisted = Column(Boolean, default=False)
     created_at = Column(DateTime, default=now)

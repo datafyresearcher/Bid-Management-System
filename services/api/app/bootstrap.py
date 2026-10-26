@@ -12,19 +12,91 @@ CONNECT_ATTEMPT_COST = 4.0
 
 
 def ensure_seeded():
+    """Bring a freshly started deployment up to a usable state.
+
+    Three things happen here, in this order:
+
+    * the knowledge base is seeded, because the scorer reads the company's
+      licence and track record to decide whether a tender is even worth
+      looking at;
+    * the portals are read, but only when there is nothing to read yet — the
+      database is shared, so a second instance does not re-read what the
+      first one already captured;
+    * whatever the last scan left waiting for a score is scored, so the
+      review queue fills on its own.
+    """
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    try:
-        import seed
+    from app.config import settings
 
-        seed.main()
+    if settings.seed_on_startup:
+        try:
+            import seed
+
+            # The schema was already brought up by the application before it
+            # got here, so it is not checked a second time.
+            seed.main(init=False)
+        except Exception:
+            logger.exception("Startup seed failed")
+    try:
+        apply_admin_password()
     except Exception:
-        logger.exception("Startup seed failed")
+        logger.exception("Administrator password rotation failed")
     try:
         populate_from_portals()
     except Exception:
         logger.exception("Startup portal read failed")
+    try:
+        score_leftovers()
+    except Exception:
+        logger.exception("Startup scoring pass failed")
+
+
+def apply_admin_password():
+    """Rotate the administrator's password when BMS_ADMIN_PASSWORD says so.
+
+    Runs even when seeding is off, because the rotation is how an operator
+    changes or recovers the admin password on a live deployment: set the
+    variable, redeploy, sign in with the new password.
+    """
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from app.config import settings
+    from app.db import SessionLocal
+
+    if not settings.admin_password:
+        return False
+    import seed
+
+    db = SessionLocal()
+    try:
+        return seed.apply_admin_password(db)
+    finally:
+        db.close()
+
+
+def score_leftovers():
+    """Score whatever the last capture left waiting.
+
+    A scan scores the tenders it captured, but a large capture can run out of
+    its scoring budget before it reaches the end of the list. This picks up
+    the rest, so tenders that were captured but never scored do not sit in
+    the inbox with an empty review queue above them.
+    """
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.services import jobs
+
+    db = SessionLocal()
+    try:
+        scored = jobs.score_pending(db, budget_seconds=settings.startup_score_budget_seconds)
+        if scored:
+            logger.info("Startup scored %s tender(s) left over from an earlier capture", scored)
+        return scored
+    finally:
+        db.close()
 
 
 def populate_from_portals():

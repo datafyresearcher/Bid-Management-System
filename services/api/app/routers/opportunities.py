@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import Opportunity, User
 from app.security import get_current_user, require_roles
@@ -137,6 +138,40 @@ def score_opportunity(opp_id: int, user: User = Depends(require_roles("bid_manag
         raise HTTPException(status_code=404, detail="Opportunity not found")
     score = scorer.run(db, opp)
     return {"score_total": score.total, "subscores": score.subscores, "hard_gate_result": score.hard_gates, "rationale": score.rationale, "state": opp.state}
+
+
+@router.post("/score-pending")
+def score_pending(user: User = Depends(require_roles("bid_manager")), db: Session = Depends(get_db)):
+    """Score every captured tender that is still waiting for a score.
+
+    A scan files the tenders it found but leaves the decision on each one to
+    the bid manager. This takes all of them at once, so the review queue fills
+    instead of staying empty until every tender has been scored by hand.
+
+    The batch runs inside a budget, so this returns as soon as it has to.
+    Whatever it did not reach is still waiting and is picked up by the next
+    pass; the count it returns says how many were scored this time.
+    """
+    from app.services import jobs
+
+    pending = (
+        db.execute(select(Opportunity.id).where(Opportunity.state == "NORMALIZED"))
+        .scalars()
+        .all()
+    )
+    scored = jobs.score_new(
+        db,
+        list(pending),
+        budget_seconds=settings.score_pending_budget_seconds,
+    )
+    audit.record(
+        db,
+        "opportunity.score_pending",
+        actor=user.name,
+        detail={"pending": len(pending), "scored": scored},
+    )
+    return {"pending": len(pending), "scored": scored}
+
 
 
 @router.post("/{opp_id}/override")

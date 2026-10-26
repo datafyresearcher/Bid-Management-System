@@ -50,7 +50,7 @@ def run(db, opp) -> list:
         )
         llm.record_metric(db, "risk", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():
-            payload = llm.parse_json_block(result.text)
+            payload = llm.parse_json_block(result.text, "flags")
             validation = schemas.validate_risk_flags(payload)
             if validation.valid:
                 existing_titles = {f["title"].lower()[:50] for f in flags}

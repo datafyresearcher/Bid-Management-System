@@ -45,16 +45,22 @@ TENDER_TYPE_KEYWORDS = {
 }
 
 
-def classify_category(db, source_code: str, source_category: str, title: str, description: str) -> str:
+def classify_category(db, source_code: str, source_category: str, title: str, description: str, mappings=None) -> str:
     if source_category:
-        mapping = db.execute(
-            select(CategoryMapping).where(
-                CategoryMapping.source_code == source_code,
-                CategoryMapping.source_category == source_category,
-            )
-        ).scalar_one_or_none()
+        mapping = None
+        if mappings is not None:
+            # The whole map for this source was read once for the batch.
+            mapping = mappings.get(source_category)
+        else:
+            mapping = db.execute(
+                select(CategoryMapping).where(
+                    CategoryMapping.source_code == source_code,
+                    CategoryMapping.source_category == source_category,
+                )
+            ).scalar_one_or_none()
+            mapping = mapping.internal_category if mapping else None
         if mapping:
-            return mapping.internal_category
+            return mapping
     text = f"{title} {description}".lower()
     for category, keywords in CATEGORY_KEYWORDS.items():
         if any(_keyword_hit(k, text) for k in keywords):
@@ -142,17 +148,135 @@ def _same_tender_record(db, source, notice: dict):
     return existing
 
 
+class _BatchLookup:
+    """The records a batch of notices is matched against, read once.
+
+    A portal can publish a hundred notices between two scans. Matching each
+    one against the database separately costs a round trip per notice, and a
+    scan that cannot finish inside the time its request is allowed leaves the
+    tenders behind. The records a notice is matched against are therefore read
+    once for the whole batch, and the tenders the batch creates are written
+    in one go.
+    """
+
+    def __init__(self, db, source, notices):
+        self.db = db
+        self.source = source
+        self.by_dedup = {}
+        self.by_buyer_title = {}
+        self.categories = {}
+        self.leads = []
+
+        keys = []
+        for notice in notices:
+            key = build_dedup_key(
+                notice.get("buyer_name", ""),
+                notice.get("buyer_ref", ""),
+                parse_date(notice.get("published_at")),
+            )
+            if key and not key.endswith("|na"):
+                keys.append(key)
+        if keys:
+            for row in db.execute(select(Opportunity).where(Opportunity.dedup_key.in_(keys))).scalars().all():
+                self.by_dedup[row.dedup_key] = row
+
+        # Records already held for this source, indexed the way a corrigendum
+        # is paired with the tender it corrects.
+        for row in db.execute(select(Opportunity).where(Opportunity.source_id == source.id)).scalars().all():
+            key = (row.buyer_name or "", (row.title or "").strip().upper())
+            self.by_buyer_title.setdefault(key, []).append(row)
+
+        for mapping in db.execute(select(CategoryMapping).where(CategoryMapping.source_code == source.code)).scalars().all():
+            self.categories[mapping.source_category] = mapping.internal_category
+
+        self.leads = db.execute(select(Lead).where(Lead.status == "Tracking")).scalars().all()
+
+    def same_tender_record(self, notice: dict):
+        """The record this notice belongs to, where it is a correction."""
+        title = (notice.get("title") or "").strip().upper()
+        buyer = (notice.get("buyer_name") or "").strip()
+        if not title or not buyer:
+            return None
+        is_corrigendum = (notice.get("notice_status") or "") == "Corrigendum"
+        matches = self.by_buyer_title.get((buyer, title), [])
+        if len(matches) != 1:
+            return None
+        existing = matches[0]
+        if not (is_corrigendum or existing.notice_status == "Corrigendum"):
+            return None
+        return existing
+
+    def remember(self, opp: Opportunity, dedup_key: str):
+        """Remember a tender this batch has just created."""
+        if dedup_key and not dedup_key.endswith("|na"):
+            self.by_dedup[dedup_key] = opp
+        key = (opp.buyer_name or "", (opp.title or "").strip().upper())
+        self.by_buyer_title.setdefault(key, []).append(opp)
+
+
+def normalize_notices(db, source, notices) -> list:
+    """Capture a whole listing of notices from one portal.
+
+    The same work as `normalize_notice`, done for a batch. The records the
+    notices are matched against are read once, the new tenders are written
+    together, and the audit trail is written with them. That is what lets a
+    scan finish inside the time the request it runs in is allowed, even when
+    the portal published a hundred tenders since the last scan.
+    """
+    if not notices:
+        return []
+    lookup = _BatchLookup(db, source, notices)
+    created = []
+    for notice in notices:
+        opp = _normalize_one(db, source, notice, lookup)
+        if opp is not None:
+            created.append(opp)
+    # The tenders are written first, so that they carry their own identity,
+    # and the audit trail and the leads that follow them are written with it.
+    db.commit()
+    for opp in created:
+        if opp.state != "NORMALIZED":
+            continue
+        audit.record(
+            db,
+            "opportunity.normalized",
+            opportunity_id=opp.id,
+            detail={"source": source.code, "native_id": _native_id_of(opp), "category": opp.category_internal},
+            commit=False,
+        )
+        link_tracking_leads(db, opp, lookup.leads)
+    db.commit()
+    return created
+
+
+def _native_id_of(opp: Opportunity) -> str:
+    for ref in opp.source_refs or []:
+        if isinstance(ref, dict) and ref.get("native_id"):
+            return str(ref.get("native_id"))
+    return ""
+
+
 def normalize_notice(db, source, notice: dict) -> Opportunity:
+    return _normalize_one(db, source, notice, None)
+
+
+def _normalize_one(db, source, notice: dict, lookup=None):
     published = parse_date(notice.get("published_at"))
     dedup_key = build_dedup_key(notice.get("buyer_name", ""), notice.get("buyer_ref", ""), published)
     existing = None
     if dedup_key and not dedup_key.endswith("|na"):
-        existing = db.execute(select(Opportunity).where(Opportunity.dedup_key == dedup_key)).scalar_one_or_none()
+        if lookup is not None:
+            existing = lookup.by_dedup.get(dedup_key)
+        else:
+            existing = db.execute(select(Opportunity).where(Opportunity.dedup_key == dedup_key)).scalar_one_or_none()
     # A correction of a tender that is already on file is that tender, not a
     # second one.
     paired = False
     if existing is None:
-        existing = _same_tender_record(db, source, notice)
+        if lookup is not None:
+            existing = lookup.same_tender_record(notice)
+        else:
+            existing = _same_tender_record(db, source, notice)
         paired = existing is not None
 
     source_ref = {
@@ -203,7 +327,8 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
             existing.published_at = published
         if status and status != existing.notice_status and not keep_corrigendum:
             existing.notice_status = status
-        db.commit()
+        if lookup is None:
+            db.commit()
         return existing
 
     title = notice.get("title", "").strip()
@@ -212,7 +337,14 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
     currency = detect_currency(combined)
     estimated_value = parse_amount(notice.get("estimated_value"))
     regime, family = detect_regime(combined)
-    category = classify_category(db, source.code, notice.get("source_category", ""), title, description)
+    category = classify_category(
+        db,
+        source.code,
+        notice.get("source_category", ""),
+        title,
+        description,
+        mappings=lookup.categories if lookup is not None else None,
+    )
     # When the portal states the procurement type itself, that is used rather
     # than a guess from the wording of the title.
     tender_type = (notice.get("tender_type") or "").strip() or classify_tender_type(title, description)
@@ -245,6 +377,12 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
         source_id=source.id,
     )
     db.add(opp)
+    if lookup is not None:
+        # The tender is written with the rest of the batch, but it is
+        # remembered straight away so that a second notice in the same batch
+        # is matched against it rather than becoming a duplicate.
+        lookup.remember(opp, dedup_key)
+        return opp
     db.commit()
     db.refresh(opp)
 
@@ -258,24 +396,28 @@ def normalize_notice(db, source, notice: dict) -> Opportunity:
     return opp
 
 
-def link_tracking_leads(db, opp: Opportunity):
-    leads = db.execute(select(Lead).where(Lead.status == "Tracking")).scalars().all()
+def link_tracking_leads(db, opp: Opportunity, leads=None):
+    # The leads waiting for a published tender are read once for a batch, so
+    # that a hundred new tenders do not ask the same question a hundred times.
+    if leads is None:
+        leads = db.execute(select(Lead).where(Lead.status == "Tracking")).scalars().all()
     for lead in leads:
-        if _lead_matches(lead, opp):
-            lead.status = "Converted"
-            lead.converted_opportunity_id = opp.id
-            opp.lead_id = lead.id
-            db.commit()
-            notifications.notify(
-                db,
-                "lead",
-                f"Lead converted: {lead.title[:80]}",
-                f"Lead #{lead.id} matched published tender — {opp.title[:120]}",
-                severity="info",
-                opportunity_id=opp.id,
-            )
-            audit.record(db, "lead.converted", opportunity_id=opp.id, detail={"lead_id": lead.id})
-            return
+        if not _lead_matches(lead, opp):
+            continue
+        lead.status = "Converted"
+        lead.converted_opportunity_id = opp.id
+        opp.lead_id = lead.id
+        db.commit()
+        notifications.notify(
+            db,
+            "lead",
+            f"Lead converted: {lead.title[:80]}",
+            f"Lead #{lead.id} matched published tender — {opp.title[:120]}",
+            severity="info",
+            opportunity_id=opp.id,
+        )
+        audit.record(db, "lead.converted", opportunity_id=opp.id, detail={"lead_id": lead.id})
+        return
 
 
 def _lead_matches(lead: Lead, opp: Opportunity) -> bool:

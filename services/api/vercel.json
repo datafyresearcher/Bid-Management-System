@@ -5,5 +5,11 @@
     "app/main.py": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/tick",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }

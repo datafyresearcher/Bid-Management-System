@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmtDate, fmtMoney, stateClass } from "../../lib/api";
+import SourceTag, { sourceLink, sourceName } from "../../components/SourceTag";
 
 const STATES = [
+  ["", "Everything (every captured tender)"],
+  ["GATE1", "Gate 1 open"],
   ["NORMALIZED,SCORED,SCREENED_OUT,AUTO_ARCHIVED", "All triage states"],
   ["NORMALIZED", "New (not scored)"],
   ["SCORED,GATE1", "Passed screening"],
@@ -12,9 +15,32 @@ const STATES = [
   ["AUTO_ARCHIVED", "Auto archived"],
 ];
 
+/**
+ * The tender title opens the notice on the portal it was published on.
+ *
+ * A bid manager reads the tender where the authority published it — that is
+ * the document they are bidding on. The system keeps the reference number and
+ * the notice link together so the original is always one click away, and the
+ * internal bid room stays reachable from the Open button on the same row.
+ */
+function TenderTitle({ o }) {
+  const href = sourceLink(o.source);
+  const label = o.title.slice(0, 90);
+  if (!href) {
+    return <Link href={`/opportunities/${o.id}`}>{label}</Link>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener" title={`Open on ${sourceName(o.source) || "the source portal"}`}>
+      {label}
+    </a>
+  );
+}
+
 export default function InboxPage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [state, setState] = useState(STATES[0][0]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,7 +48,10 @@ export default function InboxPage() {
   const [info, setInfo] = useState("");
 
   const load = useCallback(() => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
     if (state) params.set("state", state);
     if (q) params.set("q", q);
     api(`/api/opportunities?${params.toString()}`)
@@ -31,11 +60,20 @@ export default function InboxPage() {
         setTotal(data.total);
       })
       .catch((e) => setError(e.message));
-  }, [state, q]);
+  }, [state, q, page, pageSize]);
+
+  // A new filter is a new view, so it starts at the first page.
+  useEffect(() => {
+    setPage(1);
+  }, [state, q, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
 
   const score = async (id) => {
     setBusy(true);
@@ -67,6 +105,25 @@ export default function InboxPage() {
     }
   };
 
+  const scoreAll = async () => {
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      const res = await api("/api/opportunities/score-pending", { method: "POST" });
+      setInfo(
+        res.scored
+          ? `Scored ${res.scored} waiting tender(s) — the ones that cleared screening are now in the review queue.`
+          : "Nothing was waiting for a score."
+      );
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <h2 className="page-title">Tender Inbox</h2>
@@ -88,10 +145,39 @@ export default function InboxPage() {
             ))}
           </select>
         </div>
+        <div>
+          <label>Per page</label>
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+            {[25, 50, 100].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
         <button className="btn" onClick={load}>Refresh</button>
+        <button className="btn primary" disabled={busy} onClick={scoreAll}>Score all waiting</button>
       </div>
 
-      <p className="muted mb-14">{total} item(s)</p>
+      {total > 0 ? (
+        <div className="pager">
+          <p className="muted mb-14">Showing {first}–{last} of {total} tender(s).</p>
+          <div className="row-actions">
+            <button className="btn" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              ← Previous
+            </button>
+            <span className="muted">
+              Page {page} of {pages}
+            </span>
+            <button className="btn" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>
+              Next →
+            </button>
+            {page < pages ? (
+              <button className="btn" onClick={() => setPage(pages)}>
+                Last page
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="table-wrap">
         <table>
@@ -115,8 +201,9 @@ export default function InboxPage() {
                   </span>
                 </td>
                 <td data-label="Tender">
-                  <Link href={`/opportunities/${o.id}`}>{o.title.slice(0, 90)}</Link>
+                  <TenderTitle o={o} />
                   <div className="muted">{o.buyer_name} {o.buyer_ref ? `· ${o.buyer_ref}` : ""}</div>
+                  <SourceTag source={o.source} />
                   {o.hard_gate_result && !o.hard_gate_result.passed && o.hard_gate_result.failures && o.hard_gate_result.failures.length ? (
                     <div className="muted">Gate failed: {o.hard_gate_result.failures.map((f) => f.reason).join("; ")}</div>
                   ) : null}

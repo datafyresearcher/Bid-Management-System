@@ -6,6 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, clearSession, getToken, getUser } from "../lib/api";
 
 const APP_TAGLINE = "AI Powered Bid Management System";
+const COMPANY_NAME = "AL-Hussain Traders & Engineers PVT. LTD.";
+const COMPANY_WEBSITE = "https://www.ahte.com.pk";
+const COMPANY_EMAIL = "info@ahte.com.pk";
 
 const NAV = [
   ["/", "Dashboard", "grid"],
@@ -191,6 +194,7 @@ export default function Shell({ children }) {
             <span className="brand-title-suffix">BMS</span>
           </h1>
           <span className="brand-tagline">{APP_TAGLINE}</span>
+          <span className="brand-company">{COMPANY_NAME}</span>
         </div>
 
         <nav aria-label="Primary">
@@ -209,6 +213,13 @@ export default function Shell({ children }) {
           <strong>{user ? user.name : "—"}</strong>
           <span>{user ? `${user.role} · ${user.email}` : ""}</span>
           <button onClick={logout}>Sign out</button>
+        </div>
+
+        <div className="companycontact">
+          <a href={COMPANY_WEBSITE} target="_blank" rel="noreferrer noopener">
+            www.ahte.com.pk
+          </a>
+          <a href={`mailto:${COMPANY_EMAIL}`}>{COMPANY_EMAIL}</a>
         </div>
 
         <div className="poweredby">

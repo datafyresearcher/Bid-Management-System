@@ -65,3 +65,33 @@ def test_weak_opportunity_auto_archives(db):
     score = scorer.run(db, opp)
     assert score.total < 40
     assert opp.state == "AUTO_ARCHIVED"
+
+
+def test_a_tender_can_be_scored_without_the_model(db):
+    """The score must not wait on a model that is slow or absent.
+
+    A tender is scored, it opens its gate, and the deterministic explanation
+    stands in for the written one. The score itself is the same either way.
+    """
+    opp = _make_opp(db)
+    score = scorer.run(db, opp, narrate=False)
+    assert score.total >= 55
+    assert opp.state == "GATE1"
+    assert opp.ai_rationale
+    task = db.execute(select(GateTask).where(GateTask.opportunity_id == opp.id)).scalars().first()
+    assert task is not None
+    assert task.status == "PENDING"
+
+
+def test_the_gate_snapshot_follows_a_re_score(db):
+    """The reviewer reads the snapshot, so it has to describe the current score."""
+    opp = _make_opp(db)
+    scorer.run(db, opp)
+    task = db.execute(select(GateTask).where(GateTask.opportunity_id == opp.id)).scalars().first()
+    first = dict(task.inputs_snapshot)
+
+    scorer.run(db, opp)
+    db.refresh(task)
+    assert task.inputs_snapshot["score"] == opp.score_total
+    assert task.inputs_snapshot["rationale"] == opp.ai_rationale
+    assert task.inputs_snapshot["score"] == first["score"]

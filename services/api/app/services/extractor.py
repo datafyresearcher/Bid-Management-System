@@ -387,7 +387,7 @@ def run(db, opp) -> dict:
         )
         llm.record_metric(db, "extract", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():
-            payload = llm.parse_json_block(result.text)
+            payload = llm.parse_json_block(result.text, "requirements")
             validation = schemas.validate_requirements(payload)
             if validation.valid:
                 for item in validation.payload["requirements"][:40]:

@@ -40,8 +40,25 @@ def _bucket(total):
 
 
 def summary(db) -> dict:
+    from datetime import timedelta
+
+    from app.config import settings
+    from app.services.utils import utcnow
+
     by_task = {}
-    metrics = db.execute(select(AIMetric)).scalars().all()
+    # Model quality is a question about the recent past — how the calls made
+    # lately have behaved. Reading the whole history answers a different
+    # question at a cost that grows forever: on a database over the network,
+    # a year of scans is a query that does not come back inside a request.
+    metrics = (
+        db.execute(
+            select(AIMetric).where(
+                AIMetric.created_at >= utcnow() - timedelta(days=settings.ai_metrics_window_days)
+            )
+        )
+        .scalars()
+        .all()
+    )
     for m in metrics:
         bucket = by_task.setdefault(
             m.task,
@@ -61,6 +78,28 @@ def summary(db) -> dict:
         bucket["avg_latency_ms"] = round(bucket["latency_ms"] / bucket["calls"], 1) if bucket["calls"] else 0
         bucket["valid_rate"] = round((bucket["calls"] - bucket["invalid"]) / bucket["calls"], 3) if bucket["calls"] else 0
 
+    # Which model actually answered. A router that picks the model per call —
+    # OpenRouter's free router does — makes "openrouter/free" a name for a
+    # queue of models rather than a model at all, and the only way to see what
+    # is really serving the traffic is to count the answers.
+    by_model = {}
+    for m in metrics:
+        if m.simulated:
+            continue
+        entry = by_model.setdefault(
+            m.model or "unknown",
+            {"calls": 0, "invalid": 0, "tokens": 0, "latency_ms": 0, "errors": 0},
+        )
+        entry["calls"] += 1
+        entry["invalid"] += 0 if m.output_valid else 1
+        entry["tokens"] += m.tokens_estimate or 0
+        entry["latency_ms"] += m.latency_ms or 0
+        entry["errors"] += 1 if (m.error or "") else 0
+    for entry in by_model.values():
+        entry["avg_latency_ms"] = round(entry["latency_ms"] / entry["calls"], 1) if entry["calls"] else 0
+        entry["valid_rate"] = round((entry["calls"] - entry["invalid"]) / entry["calls"], 3) if entry["calls"] else 0
+    by_model = dict(sorted(by_model.items(), key=lambda kv: -kv[1]["calls"]))
+
     score_count = db.execute(select(func.count(Score.id))).scalar() or 0
     override_count = (
         db.execute(select(func.count(DecisionAudit.id)).where(DecisionAudit.action == "screening.override")).scalar() or 0
@@ -72,6 +111,7 @@ def summary(db) -> dict:
 
     return {
         "llm_by_task": by_task,
+        "llm_by_model": by_model,
         "provider": llm.provider_status(),
         "scores_total": score_count,
         "screening_overrides": override_count,

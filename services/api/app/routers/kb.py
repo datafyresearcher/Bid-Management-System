@@ -36,6 +36,7 @@ class CompanyIn(BaseModel):
     tax_status: str = "Active"
     address: str = ""
     website: str = ""
+    email: str = ""
     summary: str = ""
     blacklisted: bool = False
 
@@ -168,6 +169,7 @@ def get_company(user: User = Depends(get_current_user), db: Session = Depends(ge
         "tax_status": company.tax_status,
         "address": company.address,
         "website": company.website,
+        "email": company.email,
         "summary": company.summary,
         "blacklisted": company.blacklisted,
     }

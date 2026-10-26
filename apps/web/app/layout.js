@@ -3,7 +3,8 @@ import Shell from "../components/Shell";
 
 export const metadata = {
   title: "AHTE BMS — AI Powered Bid Management System",
-  description: "AI-assisted tender discovery, triage and proposal management for AHTE",
+  description:
+    "AI-assisted tender discovery, triage and proposal management for AL-Hussain Traders & Engineers PVT. LTD.",
 };
 
 export const viewport = {
