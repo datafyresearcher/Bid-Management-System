@@ -87,7 +87,14 @@ export default function LoginPage() {
           required
         />
         <button className="btn primary login-submit" type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? (
+            <>
+              <span className="btn-spin" aria-hidden="true" />
+              Signing in…
+            </>
+          ) : (
+            "Sign in"
+          )}
         </button>
         {DEMO_MODE ? (
           <div className="demo-users">

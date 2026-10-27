@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearSession, getToken, getUser } from "../lib/api";
 import ThemeToggle from "./ThemeToggle";
+import { BrandLoader } from "./Loading";
 
 const APP_TAGLINE = "AI Powered Bid Management System";
 const COMPANY_NAME = "AL-Hussain Traders & Engineers PVT. LTD.";
@@ -108,7 +109,17 @@ export default function Shell({ children }) {
       router.replace("/login");
       return;
     }
-    setUser(getUser());
+    // Paint the shell immediately from the cached session and revalidate
+    // against the API in the background. Waiting for /api/auth/me before
+    // rendering a single pixel made every reload feel slower than it is;
+    // the cached user is one page load old at worst, and the revalidation
+    // below corrects name/role changes (a 401 clears the session and
+    // returns to sign-in).
+    const cached = getUser();
+    if (cached) {
+      setUser(cached);
+      setReady(true);
+    }
     api("/api/auth/me")
       .then((me) => {
         setUser(me);
@@ -145,7 +156,7 @@ export default function Shell({ children }) {
     return (
       <div className="layout">
         <main className="main">
-          <p className="muted">Loading session…</p>
+          <BrandLoader label="Preparing your workspace" />
         </main>
       </div>
     );

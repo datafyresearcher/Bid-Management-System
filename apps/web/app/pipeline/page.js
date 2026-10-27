@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, daysTo, fmtDate, fmtMoney, stateClass } from "../../lib/api";
+import { ListSkeleton } from "../../components/Loading";
 
 const FILTERS = [
   ["GATE1,GATE2,GATE3,GATE4,GATE5,DOCS_FETCHED,ANALYZED,DRAFTING,ASSEMBLY,READY_TO_SUBMIT,SUBMITTED,EVALUATION", "Active pipeline"],
@@ -21,6 +22,7 @@ export default function PipelinePage() {
   const [state, setState] = useState(FILTERS[0][0]);
   const [sort, setSort] = useState("deadline");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -34,7 +36,8 @@ export default function PipelinePage() {
         setItems(data.items);
         setTotal(data.total);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [state, sort, page, pageSize]);
 
   // A new filter is a new view, so it starts at the first page.
@@ -56,6 +59,15 @@ export default function PipelinePage() {
     acc[key].push(o);
     return acc;
   }, {});
+
+  if (loading && !error) {
+    return (
+      <ListSkeleton
+        title="Bid Pipeline"
+        sub="Opportunities by workflow state. Each gate requires a human decision before the next step."
+      />
+    );
+  }
 
   return (
     <>

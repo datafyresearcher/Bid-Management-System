@@ -7,6 +7,7 @@ import {
   api, daysTo, DECISIONS, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, stateClass,
 } from "../../../lib/api";
 import { tierClass } from "../../../components/SourceTag";
+import { DetailSkeleton } from "../../../components/Loading";
 
 export default function OpportunityPage() {
   const params = useParams();
@@ -49,7 +50,7 @@ export default function OpportunityPage() {
   };
 
   if (error && !opp) return <div className="notice err">{error}</div>;
-  if (!opp) return <p className="muted">Loading bid room…</p>;
+  if (!opp) return <DetailSkeleton />;
 
   const pendingGate = (opp.gates || []).find((g) => ["PENDING", "OVERDUE"].includes(g.status));
   const closeStates = ["WON", "LOST", "REJECTED", "ABANDONED", "SCREENED_OUT", "AUTO_ARCHIVED"];

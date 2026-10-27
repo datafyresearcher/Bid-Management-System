@@ -59,6 +59,10 @@
   --btn-primary-shadow: 0 1px 2px rgba(16, 60, 130, 0.35), 0 5px 14px -4px rgba(27, 95, 201, 0.45);
   --tab-active-line: rgba(27, 95, 201, 0.35);
 
+  /* --- loading skeletons --- */
+  --skel: #e7ebf3;
+  --skel-shine: rgba(255, 255, 255, 0.75);
+
   /* --- login (dark stage in both themes) --- */
   --login-bg:
     radial-gradient(1100px 700px at 85% -10%, rgba(56, 161, 229, 0.26), transparent 60%),
@@ -131,6 +135,9 @@
   --btn-primary-bg: linear-gradient(180deg, #3f83e6 0%, #2a67c8 100%);
   --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 5px 16px -4px rgba(59, 130, 246, 0.5);
   --tab-active-line: rgba(110, 167, 239, 0.45);
+
+  --skel: rgba(148, 163, 184, 0.1);
+  --skel-shine: rgba(148, 163, 184, 0.17);
 
   --login-card-bg: rgba(15, 25, 44, 0.82);
   --login-card-line: rgba(148, 163, 184, 0.18);
@@ -219,6 +226,57 @@ html.theme-switching * {
   *::after {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* --- shared keyframes (transforms/opacity only, so they stay on the GPU) --- */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes dot-blink {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+@keyframes orb-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(90px, 60px, 0) scale(1.15);
+  }
+}
+@keyframes halo-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
   }
 }
 
@@ -1003,7 +1061,11 @@ label {
   border-left-color: var(--ok);
 }
 
-/* --- sign-in ------------------------------------------------------------- */
+/* --- sign-in -------------------------------------------------------------
+   The stage is a dark teal gradient in both themes, with two slow ambient
+   light orbs drifting behind the card, a radar-style halo turning around the
+   brand mark, and a one-time entrance for the card. All transform/opacity
+   animations, so they never trigger layout. */
 
 .login-wrap {
   position: relative;
@@ -1014,13 +1076,47 @@ label {
   justify-content: center;
   padding: 24px 16px;
   background: var(--login-bg);
+  overflow: hidden;
+}
+/* Drifting light orbs — pure decoration, unreachable by pointer. Kept on
+   their own compositor layers (will-change) so the blur is paid once per
+   frame on the GPU, not re-rasterized on the CPU. */
+.login-wrap::before,
+.login-wrap::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform;
+}
+.login-wrap::before {
+  width: 520px;
+  height: 520px;
+  left: -140px;
+  top: -160px;
+  background: radial-gradient(circle at 30% 30%, rgba(56, 161, 229, 0.5), rgba(56, 161, 229, 0) 65%);
+  animation: orb-drift 22s ease-in-out infinite alternate;
+}
+.login-wrap::after {
+  width: 620px;
+  height: 620px;
+  right: -180px;
+  bottom: -220px;
+  background: radial-gradient(circle at 60% 60%, rgba(251, 191, 36, 0.26), rgba(251, 191, 36, 0) 65%);
+  animation: orb-drift 26s ease-in-out -8s infinite alternate-reverse;
 }
 .login-theme {
   position: absolute;
   top: 18px;
   right: 18px;
+  z-index: 2;
 }
 .login-card {
+  position: relative;
+  z-index: 1;
   width: 400px;
   max-width: 100%;
   background: var(--login-card-bg);
@@ -1030,13 +1126,54 @@ label {
   border-radius: var(--r-lg);
   padding: 30px 30px 26px;
   box-shadow: var(--shadow-lg);
+  animation: rise-in 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 .login-brand {
+  position: relative;
   display: flex;
   justify-content: center;
+  align-items: center;
   margin-bottom: 14px;
 }
+/* Pulsing glow, then the turning halo ring around the mark. */
+.login-brand::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  left: 50%;
+  top: 50%;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 161, 229, 0.32), transparent 70%);
+  animation: halo-pulse 2.8s ease-in-out infinite;
+  z-index: 0;
+}
+.login-brand::before {
+  content: "";
+  position: absolute;
+  width: 84px;
+  height: 84px;
+  left: 50%;
+  top: 50%;
+  margin: -42px 0 0 -42px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(56, 161, 229, 0) 0deg,
+    rgba(56, 161, 229, 0.95) 110deg,
+    rgba(251, 191, 36, 0.95) 200deg,
+    rgba(251, 191, 36, 0) 260deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  animation: spin 2.6s linear infinite;
+  will-change: transform;
+  z-index: 1;
+}
 .login-brand img {
+  position: relative;
+  z-index: 2;
   width: 58px;
   height: 58px;
   object-fit: contain;
@@ -1088,6 +1225,16 @@ label {
   font-size: 12px;
   color: var(--muted);
 }
+/* Small white spinner inside the primary button while signing in. */
+.btn-spin {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  animation: spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
 .demo-users button {
   margin: 6px 4px 0 0;
   padding: 6px 11px;
@@ -1112,6 +1259,149 @@ label {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   Loading states — the branded loader and shimmering skeletons.
+   Everything here is paint-only (transform/opacity), so a loading screen
+   costs nothing even on a slow phone.
+   ========================================================================== */
+
+.brand-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 110px 20px;
+  animation: rise-in 0.4s ease both;
+}
+.brand-loader-mark {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+}
+/* A conic gradient plate spins behind the mark; the ::after layer punches the
+   center back to card color, leaving a turning ring with an amber tail. */
+.brand-loader-mark::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 28px;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg,
+    rgba(27, 95, 201, 0) 0deg,
+    var(--accent) 120deg,
+    #fbbf24 200deg,
+    rgba(251, 191, 36, 0) 262deg
+  );
+  animation: spin 1.8s linear infinite;
+}
+.brand-loader-mark::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 19px;
+  z-index: 1;
+  background: var(--card);
+}
+.brand-loader-mark img {
+  position: relative;
+  z-index: 2;
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+}
+.brand-loader-label {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.2px;
+}
+.brand-loader-dots i {
+  font-style: normal;
+  animation: dot-blink 1.2s infinite;
+}
+.brand-loader-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.brand-loader-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* --- shimmering placeholders --------------------------------------------- */
+
+.skeleton,
+.sk-row {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--skel);
+}
+.skeleton::after,
+.sk-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--skel-shine), transparent);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.sk-label {
+  height: 11px;
+  width: 110px;
+}
+.sk-metric {
+  height: 30px;
+  width: 120px;
+  margin-top: 14px;
+}
+.sk-btn {
+  height: 28px;
+  width: 140px;
+}
+.sk-field {
+  height: 38px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+.sk-title {
+  height: 22px;
+  width: 56%;
+  margin-bottom: 10px;
+}
+.sk-sub {
+  height: 13px;
+  width: 42%;
+}
+.sk-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+.sk-row {
+  height: 24px;
+  border-radius: 8px;
+}
+.sk-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sk-form-row .sk-field {
+  margin-bottom: 0;
 }
 
 /* The controls under a long list: how much of it there is, and how to reach
@@ -1604,5 +1894,12 @@ label {
   .login-theme {
     top: 14px;
     right: 14px;
+  }
+
+  .brand-loader {
+    padding: 72px 16px;
+  }
+  .sk-row {
+    height: 30px;
   }
 }

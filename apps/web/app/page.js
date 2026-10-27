@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
+import { DashboardSkeleton } from "../components/Loading";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -20,7 +21,7 @@ export default function DashboardPage() {
   }, []);
 
   if (error) return <div className="notice err">{error}</div>;
-  if (!data) return <p className="muted">Loading dashboard…</p>;
+  if (!data) return <DashboardSkeleton />;
 
   // Counts come from the server so the tiles and the pipeline always agree.
   const activeCount = data.active_count ?? 0;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmtDate, fmtMoney, stateClass } from "../../lib/api";
 import SourceTag, { sourceLink, sourceName } from "../../components/SourceTag";
+import { ListSkeleton } from "../../components/Loading";
 
 const STATES = [
   ["", "Everything (every captured tender)"],
@@ -46,6 +47,9 @@ export default function InboxPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  // True until the first fetch answers; the list then renders in place on
+  // every later refresh instead of collapsing to a skeleton again.
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -59,7 +63,8 @@ export default function InboxPage() {
         setItems(data.items);
         setTotal(data.total);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [state, q, page, pageSize]);
 
   // A new filter is a new view, so it starts at the first page.
@@ -123,6 +128,15 @@ export default function InboxPage() {
       setBusy(false);
     }
   };
+
+  if (loading && !error) {
+    return (
+      <ListSkeleton
+        title="Tender Inbox"
+        sub="Raw and screened tenders from all sources. Score new items or override screening decisions."
+      />
+    );
+  }
 
   return (
     <>

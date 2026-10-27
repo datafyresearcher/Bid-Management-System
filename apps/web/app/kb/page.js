@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, fmtMoney } from "../../lib/api";
+import { FormSkeleton } from "../../components/Loading";
 
 const TABS = [
   ["company", "Company"],
@@ -115,7 +116,7 @@ function CompanyTab({ setInfo, setError, setBusy, busy }) {
     })).catch((e) => setError(e.message));
   }, [setError]);
 
-  if (!form) return <p className="muted">Loading…</p>;
+  if (!form) return <FormSkeleton />;
 
   const save = async () => {
     setBusy(true);

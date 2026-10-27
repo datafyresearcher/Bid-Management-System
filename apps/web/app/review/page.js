@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
+import { ListSkeleton } from "../../components/Loading";
 
 const PAGE_SIZE = 50;
 
@@ -16,6 +17,7 @@ export default function ReviewPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -24,7 +26,10 @@ export default function ReviewPage() {
       offset: String((page - 1) * PAGE_SIZE),
     });
     if (role) params.set("role", role);
-    api(`/api/gates?${params.toString()}`).then(setGates).catch((e) => setError(e.message));
+    api(`/api/gates?${params.toString()}`)
+      .then(setGates)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
     const countParams = new URLSearchParams({ status });
     if (role) countParams.set("role", role);
     api(`/api/gates/count?${countParams.toString()}`)
@@ -62,6 +67,15 @@ export default function ReviewPage() {
       setBusy(false);
     }
   };
+
+  if (loading && !error) {
+    return (
+      <ListSkeleton
+        title="Review Queue"
+        sub="Every gate decision is recorded with actor, timestamp and comment in the audit trail."
+      />
+    );
+  }
 
   return (
     <>

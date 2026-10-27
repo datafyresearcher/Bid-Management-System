@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, fmtMoney } from "../../lib/api";
+import { ListSkeleton } from "../../components/Loading";
 
 export default function LeadsPage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function LeadsPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     title: "", buyer: "", category_internal: "Substations", area: "Punjab",
     expected_window: "", estimated_value: "", confidence_tier: "Medium", source_label: "Manual entry",
@@ -27,7 +29,8 @@ export default function LeadsPage() {
         setLeads(data.items);
         setTotal(data.total);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [status, q]);
 
   useEffect(() => {
@@ -66,6 +69,15 @@ export default function LeadsPage() {
       const result = await api(`/api/leads/${lead.id}/convert`, { method: "POST" });
       router.push(`/opportunities/${result.opportunity_id}`);
     }, "Lead converted");
+
+  if (loading && !error) {
+    return (
+      <ListSkeleton
+        title="Leads Radar"
+        sub="Pre-tender intelligence: annual plans, budget signals and email inbox harvest. Converted leads auto-link to published tenders."
+      />
+    );
+  }
 
   return (
     <>
