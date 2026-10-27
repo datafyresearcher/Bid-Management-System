@@ -23,7 +23,7 @@ def _grid_page(title: str, doc_stem: str) -> str:
     return f"""<html><body>
     <table id="{GRID_ID}">
       <tr>
-        <th>Notice Kind</th><th>Procurement Title</th><th>Type</th>
+        <th>Procurement Title</th><th>Procurement Name</th><th>Type</th>
         <th>Publish Date</th><th>Close Date</th><th>Department</th>
         <th>Status</th><th>Tender Notice</th><th>Bidding Document</th>
       </tr>
