@@ -10,7 +10,7 @@ from app.db import get_db
 from app.models import GateTask, NotificationEvent, Opportunity, Source, User
 from app.security import get_current_user
 from app.serializers import gate_task, iso, notification, opportunity_brief, source
-from app.services import ai_quality
+from app.services import ai_quality, workflow
 from app.services.utils import utcnow
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -41,7 +41,12 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
 
     gate_query = (
         select(GateTask)
-        .where(GateTask.status.in_(["PENDING", "OVERDUE"]))
+        # A gate on a tender whose closing date has passed cannot be acted on
+        # any more — there is nothing left to bid on — so it is not offered as
+        # work. If the buyer extends the deadline, the next scan updates the
+        # record and the gate returns to the queue on its own.
+        .join(GateTask.opportunity)
+        .where(GateTask.status.in_(["PENDING", "OVERDUE"]), workflow.open_tender_condition())
         .order_by(GateTask.due_at)
         # The tender behind each gate is loaded in one go rather than one at a
         # time. A queue of hundreds of gates would otherwise ask the database

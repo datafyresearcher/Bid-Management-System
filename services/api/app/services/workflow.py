@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.models import (
     ComplianceItem,
@@ -21,6 +21,23 @@ FINAL_STATES = {"WON", "LOST", "REJECTED", "ABANDONED", "SCREENED_OUT", "AUTO_AR
 
 GATE_OWNERS = {1: "bid_manager", 2: "proposal_engineer", 3: "proposal_engineer", 4: "management", 5: "bid_manager"}
 GATE_SLA = {1: 24, 2: 48, 3: 48, 4: 24, 5: 12}
+
+
+def open_tender_condition(now=None):
+    """The condition a pending gate must satisfy to be worth anybody's time.
+
+    A gate on a tender whose submission window has shut can no longer be
+    acted on — there is nothing left to bid on — so it does not belong in a
+    queue of decisions. Tenders with no recorded deadline are kept: nothing
+    is known to be closed, and the buyer may still be waited on. If a buyer
+    extends a deadline, the next scan updates the record and its gates
+    reappear on their own.
+    """
+    moment = now or utcnow()
+    return or_(
+        Opportunity.submission_deadline == None,  # noqa: E711
+        Opportunity.submission_deadline > moment,
+    )
 
 
 def transition(db, opp, to_state, trigger, actor="system", detail=""):

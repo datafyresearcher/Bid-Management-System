@@ -19,8 +19,19 @@ class DecideIn(BaseModel):
 
 
 def _filtered_query(status: str, role: str, user: User):
-    """The gates a person is allowed to see, before any paging."""
-    query = select(GateTask).order_by(GateTask.due_at)
+    """The gates a person is allowed to see, before any paging.
+
+    Gates on tenders whose submission window has shut are left out: the bid
+    window is closed, so no decision on them can change anything. They stay
+    in the database and remain reachable by id — this only keeps them out of
+    the working queue.
+    """
+    query = (
+        select(GateTask)
+        .join(GateTask.opportunity)
+        .where(workflow.open_tender_condition())
+        .order_by(GateTask.due_at)
+    )
     statuses = [s.strip().upper() for s in status.split(",") if s.strip()]
     if statuses:
         query = query.where(GateTask.status.in_(statuses))
