@@ -34,3 +34,6 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# The capture bridge's local config carries its secret
+tools/ppra-bridge/config.json

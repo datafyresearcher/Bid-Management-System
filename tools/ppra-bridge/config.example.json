@@ -1,0 +1,5 @@
+{
+  "api_url": "https://bms-ahte-api.vercel.app",
+  "secret": "PASTE-THE-BMS_CAPTURE_SECRET-VALUE-HERE",
+  "source_code": "ppra_punjab"
+}

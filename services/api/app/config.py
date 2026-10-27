@@ -146,6 +146,16 @@ class Settings(BaseSettings):
     # whoever asks.
     cron_secret: str = Field(default="", validation_alias=AliasChoices("BMS_CRON_SECRET", "CRON_SECRET"))
 
+    # --- Capture bridge -------------------------------------------------
+    # One portal — eproc.punjab.gov.pk — refuses connections from datacenter
+    # networks entirely, so this deployment cannot read it however patient
+    # the client is. The bridge lets the bid desk's own machine, whose
+    # network the portal answers, capture the listing in a real browser and
+    # hand the raw pages to POST /api/sources/capture. The secret is what
+    # keeps that door shut to everyone else; empty means the door does not
+    # exist.
+    capture_secret: str = Field(default="", validation_alias=AliasChoices("BMS_CAPTURE_SECRET", "CAPTURE_SECRET"))
+
     # --- Outbound email -------------------------------------------------
     # The daily executive digest and screening alerts are delivered by SMTP
     # when these are set; without them the events stay in the dashboard

@@ -109,6 +109,23 @@ jobs:
           fi
           vercel env add CRON_SECRET --environment production --value "$CRON_SECRET_VALUE" --force --yes --token="$VERCEL_TOKEN"
 
+      # The capture bridge lets the bid desk's own machine — the only network
+      # the Punjab e-procurement portal answers — hand captured listing pages
+      # to POST /api/sources/capture. The door exists only when this secret
+      # is set. Create it once in the repository and put the same value in
+      # the bridge's config on the desk machine:
+      #   gh secret set BMS_CAPTURE_SECRET --body "$(openssl rand -hex 24)"
+      - name: Give the capture bridge its secret
+        working-directory: services/api
+        env:
+          CAPTURE_SECRET_VALUE: ${{ secrets.BMS_CAPTURE_SECRET }}
+        run: |
+          if [ -z "$CAPTURE_SECRET_VALUE" ]; then
+            echo "::notice::BMS_CAPTURE_SECRET is not set as a repository secret, so the capture bridge is off. Enable it with: gh secret set BMS_CAPTURE_SECRET --body \"\$(openssl rand -hex 24)\""
+            exit 0
+          fi
+          vercel env add BMS_CAPTURE_SECRET --environment production --value "$CAPTURE_SECRET_VALUE" --force --yes --token="$VERCEL_TOKEN"
+
       - name: Deploy to production
         working-directory: services/api
         run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
