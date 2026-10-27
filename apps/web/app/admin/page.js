@@ -38,11 +38,19 @@ export default function AdminPage() {
     // The audit list is the last of the four calls; it decides when the
     // loader hands over to the real page.
     if (!hydrated.current) {
+      let allCached = true;
       for (const [url, setState] of endpoints) {
         const cached = cacheGet(url);
-        if (cached) setState(cached);
+        if (cached) {
+          setState(cached);
+        } else {
+          allCached = false;
+        }
       }
       hydrated.current = true;
+      // A revisit renders from the cache immediately, like every other tab;
+      // the fresh reads below then update the page in place.
+      if (allCached) setLoading(false);
     }
     for (const [url, setState, onErr] of endpoints) {
       api(url)

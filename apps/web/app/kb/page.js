@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, cacheGet, cacheSet, fmtMoney } from "../../lib/api";
-import BrandLoader from "../../components/Loading";
+import { api, cacheGet, cacheSet, fmtMoney } from "../../lib/api";import BrandLoader from "../../components/Loading";
 
 const TABS = [
   ["company", "Company"],
@@ -23,7 +22,14 @@ export default function KbPage() {
   const [busy, setBusy] = useState(false);
 
   const loadSummary = useCallback(() => {
-    api("/api/kb/summary").then(setSummary).catch((e) => setError(e.message));
+    const cached = cacheGet("/api/kb/summary");
+    if (cached) setSummary(cached);
+    api("/api/kb/summary")
+      .then((data) => {
+        setSummary(data);
+        cacheSet("/api/kb/summary", data);
+      })
+      .catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {

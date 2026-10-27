@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearSession, getToken, getUser } from "../lib/api";
+import { warmCache } from "../lib/warmup";
 import ThemeToggle from "./ThemeToggle";
 import BrandLoader from "./Loading";
 
@@ -119,11 +120,17 @@ export default function Shell({ children }) {
     if (cached) {
       setUser(cached);
       setReady(true);
+      // Start warming with the cached role right away; the /me response
+      // below would call this again, which the one-shot guard absorbs.
+      warmCache(cached.role);
     }
     api("/api/auth/me")
       .then((me) => {
         setUser(me);
         setReady(true);
+        // While the user reads the landing screen, quietly fetch every
+        // tab's default view so their first click renders instantly.
+        warmCache(me.role);
       })
       .catch(() => {});
   }, [pathname, router]);
