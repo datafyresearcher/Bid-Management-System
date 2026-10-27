@@ -119,7 +119,12 @@ class Settings(BaseSettings):
     live_verify_tls: bool = True
 
     secret_key: str = "change-me-in-production"
-    token_ttl_hours: int = 12
+    # A sign-in lasts a working week. The same desk opens the portal every
+    # morning; a token that dies at lunchtime turns sign-in — and the browser's
+    # "save password?" offer that comes with it — into a daily ritual.
+    # Role and active status are re-checked against the database on every
+    # request, so a longer-lived token cannot preserve stale permissions.
+    token_ttl_hours: int = 168
 
     # --- Authentication hardening --------------------------------------
     # Password given to the seeded administrator when the knowledge base is

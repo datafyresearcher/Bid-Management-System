@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearSession, getToken, getUser } from "../lib/api";
+import ThemeToggle from "./ThemeToggle";
 
 const APP_TAGLINE = "AI Powered Bid Management System";
 const COMPANY_NAME = "AL-Hussain Traders & Engineers PVT. LTD.";
@@ -176,6 +177,7 @@ export default function Shell({ children }) {
             <strong>AHTE</strong> <span>BMS</span>
           </span>
         </span>
+        <ThemeToggle className="appbar-theme" />
       </header>
 
       {menuOpen ? <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" /> : null}
@@ -212,7 +214,12 @@ export default function Shell({ children }) {
         <div className="userbox">
           <strong>{user ? user.name : "—"}</strong>
           <span>{user ? `${user.role} · ${user.email}` : ""}</span>
-          <button onClick={logout}>Sign out</button>
+          <div className="userbox-actions">
+            <ThemeToggle />
+            <button className="signout" onClick={logout}>
+              Sign out
+            </button>
+          </div>
         </div>
 
         <div className="companycontact">
