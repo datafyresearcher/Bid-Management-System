@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { api, clearSession, fmtDateTime, getToken } from "../../lib/api";
-import { ListSkeleton } from "../../components/Loading";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, cacheGet, cacheSet, clearSession, fmtDateTime, getToken } from "../../lib/api";
+import BrandLoader from "../../components/Loading";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -26,17 +26,35 @@ export default function AdminPage() {
   const [digestPreview, setDigestPreview] = useState(null);
   const [digestBusy, setDigestBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
+    const endpoints = [
+      ["/api/admin/users", setUsers, (e) => setError(e.message)],
+      ["/api/admin/category-mappings", setMappings, () => setMappings([])],
+      ["/api/admin/ai-quality", setQuality, () => setQuality(null)],
+      ["/api/admin/audit?limit=150", setAudit, () => setAudit([])],
+    ];
     // The audit list is the last of the four calls; it decides when the
-    // skeleton hands over to the real page.
-    api("/api/admin/users").then(setUsers).catch((e) => setError(e.message));
-    api("/api/admin/category-mappings").then(setMappings).catch(() => setMappings([]));
-    api("/api/admin/ai-quality").then(setQuality).catch(() => setQuality(null));
-    api("/api/admin/audit?limit=150")
-      .then(setAudit)
-      .catch(() => setAudit([]))
-      .finally(() => setLoading(false));
+    // loader hands over to the real page.
+    if (!hydrated.current) {
+      for (const [url, setState] of endpoints) {
+        const cached = cacheGet(url);
+        if (cached) setState(cached);
+      }
+      hydrated.current = true;
+    }
+    for (const [url, setState, onErr] of endpoints) {
+      api(url)
+        .then((data) => {
+          setState(data);
+          cacheSet(url, data);
+        })
+        .catch(onErr)
+        .finally(() => {
+          if (url.startsWith("/api/admin/audit")) setLoading(false);
+        });
+    }
   }, []);
 
   useEffect(() => {
@@ -124,14 +142,7 @@ export default function AdminPage() {
     window.URL.revokeObjectURL(url);
   };
 
-  if (loading && !error) {
-    return (
-      <ListSkeleton
-        title="Admin & AI Quality"
-        sub="Users, category mappings, AI metrics and the full decision audit trail."
-      />
-    );
-  }
+  if (loading && !error) return <BrandLoader />;
 
   return (
     <>

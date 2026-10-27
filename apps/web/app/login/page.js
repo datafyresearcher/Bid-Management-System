@@ -53,6 +53,46 @@ export default function LoginPage() {
   return (
     <div className="login-wrap">
       <ThemeToggle className="login-theme" />
+      {/* Decorative side scenes: tender discovery radar (left) and the five
+          gated workflow steps orbiting the brand (right). Purely ambient —
+          hidden from assistive tech, untouchable, and only on wide screens. */}
+      <div className="login-scene" aria-hidden="true">
+        <div className="scene-radar">
+          <span className="radar-ring r1" />
+          <span className="radar-ring r2" />
+          <span className="radar-ring r3" />
+          <span className="radar-ring r4" />
+          <span className="radar-sweep" />
+          <span className="radar-center" />
+          <span className="radar-blip b1" />
+          <span className="radar-blip b2" />
+          <span className="radar-blip b3" />
+          <span className="radar-blip b4" />
+          <div className="scene-chip radar-chip">
+            <span className="chip-dot" />
+            Leads Radar · scanning live portals
+          </div>
+        </div>
+        <div className="scene-orbit">
+          <span className="orbit-ring" />
+          <span className="orbit-ring r2" />
+          <span className="orbit-core">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/ahte-logo.png" alt="" width="52" height="52" />
+          </span>
+          <div className="orbit-spinner">
+            {["G1", "G2", "G3", "G4", "G5"].map((gate, i) => (
+              <span key={gate} className={`orbit-node n${i + 1}`}>
+                <i>{gate}</i>
+              </span>
+            ))}
+          </div>
+          <div className="scene-chip orbit-chip">
+            <span className="chip-dot" />
+            G1 → G5 · every bid human-gated
+          </div>
+        </div>
+      </div>
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}

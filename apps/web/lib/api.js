@@ -1,4 +1,10 @@
+import { cacheClear } from "./cache";
+
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// Pages read and fill the session cache through this module, so the fetch
+// helper and its cache travel together.
+export { cacheGet, cacheSet } from "./cache";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
@@ -22,6 +28,9 @@ export function setSession(token, user) {
 export function clearSession() {
   window.localStorage.removeItem("bms_token");
   window.localStorage.removeItem("bms_user");
+  // Cached page data belongs to the signed-in user; drop it so the next
+  // sign-in on this browser starts clean.
+  cacheClear();
 }
 
 export async function api(path, options = {}) {

@@ -59,10 +59,6 @@
   --btn-primary-shadow: 0 1px 2px rgba(16, 60, 130, 0.35), 0 5px 14px -4px rgba(27, 95, 201, 0.45);
   --tab-active-line: rgba(27, 95, 201, 0.35);
 
-  /* --- loading skeletons --- */
-  --skel: #e7ebf3;
-  --skel-shine: rgba(255, 255, 255, 0.75);
-
   /* --- login (dark stage in both themes) --- */
   --login-bg:
     radial-gradient(1100px 700px at 85% -10%, rgba(56, 161, 229, 0.26), transparent 60%),
@@ -135,9 +131,6 @@
   --btn-primary-bg: linear-gradient(180deg, #3f83e6 0%, #2a67c8 100%);
   --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 5px 16px -4px rgba(59, 130, 246, 0.5);
   --tab-active-line: rgba(110, 167, 239, 0.45);
-
-  --skel: rgba(148, 163, 184, 0.1);
-  --skel-shine: rgba(148, 163, 184, 0.17);
 
   --login-card-bg: rgba(15, 25, 44, 0.82);
   --login-card-line: rgba(148, 163, 184, 0.18);
@@ -233,11 +226,6 @@ html.theme-switching * {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes shimmer {
-  to {
-    transform: translateX(100%);
   }
 }
 @keyframes rise-in {
@@ -1181,6 +1169,193 @@ label {
   background: #0b2b39;
   box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.5);
 }
+
+/* --- the ambient scene: radar (left) and gate orbit (right) ---------------
+   The empty stage around the card tells the product's story: on the left a
+   radar sweeps for live tenders, on the right the five decision gates orbit
+   the company mark. Decoration only — no pointer events, hidden from screen
+   readers and narrow screens where the card needs the room. */
+.login-scene {
+  display: none;
+}
+@media (min-width: 1200px) {
+  .login-scene {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6vw;
+    pointer-events: none;
+  }
+}
+
+.scene-radar {
+  position: relative;
+  width: 330px;
+  height: 330px;
+  margin-bottom: 60px;
+  opacity: 0.9;
+}
+.radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 161, 229, 0.28);
+}
+.radar-ring.r1 { inset: 0; }
+.radar-ring.r2 { inset: 13%; }
+.radar-ring.r3 { inset: 26%; }
+.radar-ring.r4 { inset: 39%; }
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(56, 161, 229, 0.5) 0deg,
+    rgba(56, 161, 229, 0.1) 55deg,
+    rgba(56, 161, 229, 0) 80deg,
+    rgba(56, 161, 229, 0) 360deg
+  );
+  animation: spin 4.5s linear infinite;
+  will-change: transform;
+}
+.radar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(139, 205, 240, 0.9);
+  box-shadow: 0 0 12px rgba(56, 161, 229, 0.8);
+}
+/* Discovered tenders blink in as the beam passes. */
+.radar-blip {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 10px 2px rgba(251, 191, 36, 0.65);
+  opacity: 0;
+  animation: blip 4.5s ease-out infinite;
+}
+.radar-blip.b1 { left: 31%; top: 20%; animation-delay: 0.9s; }
+.radar-blip.b2 { left: 68%; top: 38%; animation-delay: 2.1s; }
+.radar-blip.b3 { left: 38%; top: 66%; animation-delay: 3.2s; }
+.radar-blip.b4 { left: 74%; top: 72%; animation-delay: 3.9s; }
+@keyframes blip {
+  0% { opacity: 0; transform: scale(0.3); }
+  8% { opacity: 1; transform: scale(1); }
+  55% { opacity: 0.75; }
+  100% { opacity: 0; transform: scale(0.85); }
+}
+
+.scene-orbit {
+  position: relative;
+  width: 350px;
+  height: 350px;
+  margin-bottom: 60px;
+  opacity: 0.92;
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 161, 229, 0.22);
+}
+.orbit-ring.r2 {
+  inset: 22%;
+  border-style: dashed;
+  border-color: rgba(56, 161, 229, 0.16);
+}
+.orbit-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 92px;
+  height: 92px;
+  margin: -46px 0 0 -46px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 43, 57, 0.85);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  box-shadow: 0 0 44px rgba(56, 161, 229, 0.3), 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+}
+.orbit-core img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+}
+/* The wheel of gates: the five decision steps revolve slowly around the mark.
+   Each node's own label counter-rotates so it always reads upright. */
+.orbit-spinner {
+  position: absolute;
+  inset: 0;
+  animation: spin 32s linear infinite;
+  will-change: transform;
+}
+.orbit-node {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 32, 42, 0.9);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.25), 0 4px 14px -4px rgba(0, 0, 0, 0.6);
+}
+.orbit-node i {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #fcd34d;
+  animation: spin 32s linear infinite reverse;
+  display: block;
+}
+.orbit-node.n1 { left: 50%; top: 0; margin: -22px 0 0 -22px; }
+.orbit-node.n2 { left: 2.4%; top: 34.5%; margin: -22px 0 0 -22px; }
+.orbit-node.n3 { left: 20.6%; top: 90.4%; margin: -22px 0 0 -22px; }
+.orbit-node.n4 { left: 79.4%; top: 90.4%; margin: -22px 0 0 -22px; }
+.orbit-node.n5 { left: 97.6%; top: 34.5%; margin: -22px 0 0 -22px; }
+
+/* Small glass captions that name what each scene is showing. */
+.scene-chip {
+  position: absolute;
+  left: 50%;
+  bottom: -34px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 26, 35, 0.6);
+  border: 1px solid rgba(56, 161, 229, 0.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #bfe0f2;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
+  animation: halo-pulse 2s ease-in-out infinite;
+}
 .login-card h1 {
   margin: 0 0 2px;
   font-size: 21px;
@@ -1262,71 +1437,46 @@ label {
 }
 
 /* ==========================================================================
-   Loading states — the branded loader and shimmering skeletons.
-   Everything here is paint-only (transform/opacity), so a loading screen
-   costs nothing even on a slow phone.
+   Loading state — the one spinner used everywhere: a rotating gradient ring
+   with "Please wait…" beneath it, centered in the content area. Paint-only
+   (transform/opacity), so it costs nothing even on a slow phone.
    ========================================================================== */
 
 .brand-loader {
+  min-height: 58vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  padding: 110px 20px;
-  animation: rise-in 0.4s ease both;
+  padding: 40px 20px;
+  animation: rise-in 0.35s ease both;
 }
-.brand-loader-mark {
-  position: relative;
-  width: 84px;
-  height: 84px;
-  border-radius: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--card);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-md);
-}
-/* A conic gradient plate spins behind the mark; the ::after layer punches the
-   center back to card color, leaving a turning ring with an amber tail. */
-.brand-loader-mark::before {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 28px;
-  z-index: 0;
+.brand-loader-ring {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   background: conic-gradient(
     from 0deg,
     rgba(27, 95, 201, 0) 0deg,
-    var(--accent) 120deg,
-    #fbbf24 200deg,
-    rgba(251, 191, 36, 0) 262deg
+    rgba(27, 95, 201, 0) 30deg,
+    var(--accent) 190deg,
+    #fbbf24 285deg,
+    rgba(251, 191, 36, 0) 340deg
   );
-  animation: spin 1.8s linear infinite;
-}
-.brand-loader-mark::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 19px;
-  z-index: 1;
-  background: var(--card);
-}
-.brand-loader-mark img {
-  position: relative;
-  z-index: 2;
-  width: 46px;
-  height: 46px;
-  object-fit: contain;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5.5px), #000 calc(100% - 5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5.5px), #000 calc(100% - 5px));
+  animation: spin 1s linear infinite;
+  will-change: transform;
+  filter: drop-shadow(0 0 7px rgba(56, 161, 229, 0.45));
 }
 .brand-loader-label {
   display: inline-flex;
   align-items: baseline;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
 }
 .brand-loader-dots i {
   font-style: normal;
@@ -1337,71 +1487,6 @@ label {
 }
 .brand-loader-dots i:nth-child(3) {
   animation-delay: 0.4s;
-}
-
-/* --- shimmering placeholders --------------------------------------------- */
-
-.skeleton,
-.sk-row {
-  position: relative;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--skel);
-}
-.skeleton::after,
-.sk-row::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, var(--skel-shine), transparent);
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-.sk-label {
-  height: 11px;
-  width: 110px;
-}
-.sk-metric {
-  height: 30px;
-  width: 120px;
-  margin-top: 14px;
-}
-.sk-btn {
-  height: 28px;
-  width: 140px;
-}
-.sk-field {
-  height: 38px;
-  width: 100%;
-  margin-bottom: 16px;
-}
-.sk-title {
-  height: 22px;
-  width: 56%;
-  margin-bottom: 10px;
-}
-.sk-sub {
-  height: 13px;
-  width: 42%;
-}
-.sk-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 6px;
-}
-.sk-row {
-  height: 24px;
-  border-radius: 8px;
-}
-.sk-form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.sk-form-row .sk-field {
-  margin-bottom: 0;
 }
 
 /* The controls under a long list: how much of it there is, and how to reach
@@ -1897,9 +1982,6 @@ label {
   }
 
   .brand-loader {
-    padding: 72px 16px;
-  }
-  .sk-row {
-    height: 30px;
+    min-height: 64vh;
   }
 }

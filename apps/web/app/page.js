@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
-import { DashboardSkeleton } from "../components/Loading";
+import BrandLoader from "../components/Loading";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -12,16 +12,31 @@ export default function DashboardPage() {
   const [scanning, setScanning] = useState(null);
   const [scanNote, setScanNote] = useState("");
 
+  const DASHBOARD_URL = "/api/dashboard";
+
+  // Returning to this tab renders the last known data instantly from the
+  // cache and quietly revalidates; only the very first visit waits.
   const load = () => {
-    api("/api/dashboard").then(setData).catch((e) => setError(e.message));
+    const cached = cacheGet(DASHBOARD_URL);
+    if (cached && !data) {
+      setData(cached);
+    }
+    api(DASHBOARD_URL)
+      .then((d) => {
+        setData(d);
+        cacheSet(DASHBOARD_URL, d);
+      })
+      .catch((e) => {
+        if (!cached) setError(e.message);
+      });
   };
 
   useEffect(() => {
     load();
   }, []);
 
-  if (error) return <div className="notice err">{error}</div>;
-  if (!data) return <DashboardSkeleton />;
+  if (error && !data) return <div className="notice err">{error}</div>;
+  if (!data) return <BrandLoader />;
 
   // Counts come from the server so the tiles and the pipeline always agree.
   const activeCount = data.active_count ?? 0;

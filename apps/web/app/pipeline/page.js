@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, daysTo, fmtDate, fmtMoney, stateClass } from "../../lib/api";
-import { ListSkeleton } from "../../components/Loading";
+import { api, cacheGet, cacheSet, daysTo, fmtDate, fmtMoney, stateClass } from "../../lib/api";
+import BrandLoader from "../../components/Loading";
 
 const FILTERS = [
   ["GATE1,GATE2,GATE3,GATE4,GATE5,DOCS_FETCHED,ANALYZED,DRAFTING,ASSEMBLY,READY_TO_SUBMIT,SUBMITTED,EVALUATION", "Active pipeline"],
@@ -23,6 +23,7 @@ export default function PipelinePage() {
   const [sort, setSort] = useState("deadline");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -31,10 +32,21 @@ export default function PipelinePage() {
       sort,
     });
     if (state) params.set("state", state);
-    api(`/api/opportunities?${params.toString()}`)
+    const url = `/api/opportunities?${params.toString()}`;
+    if (!hydrated.current) {
+      const cached = cacheGet(url);
+      if (cached) {
+        setItems(cached.items);
+        setTotal(cached.total);
+        setLoading(false);
+      }
+      hydrated.current = true;
+    }
+    api(url)
       .then((data) => {
         setItems(data.items);
         setTotal(data.total);
+        cacheSet(url, data);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -60,14 +72,7 @@ export default function PipelinePage() {
     return acc;
   }, {});
 
-  if (loading && !error) {
-    return (
-      <ListSkeleton
-        title="Bid Pipeline"
-        sub="Opportunities by workflow state. Each gate requires a human decision before the next step."
-      />
-    );
-  }
+  if (loading && !error) return <BrandLoader />;
 
   return (
     <>

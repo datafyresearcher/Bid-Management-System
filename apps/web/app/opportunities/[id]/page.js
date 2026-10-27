@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  api, daysTo, DECISIONS, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, stateClass,
+  api, cacheGet, cacheSet, daysTo, DECISIONS, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, severityClass, stateClass,
 } from "../../../lib/api";
 import { tierClass } from "../../../components/SourceTag";
-import { DetailSkeleton } from "../../../components/Loading";
+import BrandLoader from "../../../components/Loading";
 
 export default function OpportunityPage() {
   const params = useParams();
@@ -23,11 +23,30 @@ export default function OpportunityPage() {
   const [files, setFiles] = useState([]);
   const [savingSection, setSavingSection] = useState(null);
   const [outcomeForm, setOutcomeForm] = useState({ result: "WON", reason_code: "", comment: "", award_value: "" });
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
-    api(`/api/opportunities/${id}`).then(setOpp).catch((e) => setError(e.message));
-    api(`/api/proposals/${id}`).then(setProposal).catch(() => setProposal(null));
-    api(`/api/proposals/${id}/submission`).then((s) => setSubmission(s && s.id ? s : null)).catch(() => setSubmission(null));
+    const endpoints = [
+      [`/api/opportunities/${id}`, setOpp, (e) => setError(e.message)],
+      [`/api/proposals/${id}`, setProposal, () => setProposal(null)],
+      // A missing submission comes back as an empty object; the page wants null.
+      [`/api/proposals/${id}/submission`, (s) => setSubmission(s && s.id ? s : null), () => setSubmission(null)],
+    ];
+    if (!hydrated.current) {
+      for (const [url, setState] of endpoints) {
+        const cached = cacheGet(url);
+        if (cached) setState(cached);
+      }
+      hydrated.current = true;
+    }
+    for (const [url, setState, onErr] of endpoints) {
+      api(url)
+        .then((data) => {
+          setState(data);
+          cacheSet(url, data);
+        })
+        .catch(onErr);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -50,7 +69,7 @@ export default function OpportunityPage() {
   };
 
   if (error && !opp) return <div className="notice err">{error}</div>;
-  if (!opp) return <DetailSkeleton />;
+  if (!opp) return <BrandLoader />;
 
   const pendingGate = (opp.gates || []).find((g) => ["PENDING", "OVERDUE"].includes(g.status));
   const closeStates = ["WON", "LOST", "REJECTED", "ABANDONED", "SCREENED_OUT", "AUTO_ARCHIVED"];

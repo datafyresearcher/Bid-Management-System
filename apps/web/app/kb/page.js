@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, fmtMoney } from "../../lib/api";
-import { FormSkeleton } from "../../components/Loading";
+import { api, cacheGet, cacheSet, fmtMoney } from "../../lib/api";
+import BrandLoader from "../../components/Loading";
 
 const TABS = [
   ["company", "Company"],
@@ -111,12 +111,21 @@ function useCrud(path, loadSummary, setInfo, setError, setBusy) {
 function CompanyTab({ setInfo, setError, setBusy, busy }) {
   const [form, setForm] = useState(null);
   useEffect(() => {
-    api("/api/kb/company").then((data) => setForm(data && data.id ? data : {
-      name: "", legal_name: "", secp: "", ntn: "", tax_status: "Active", address: "", website: "", summary: "", blacklisted: false,
-    })).catch((e) => setError(e.message));
+    const url = "/api/kb/company";
+    const cached = cacheGet(url);
+    if (cached) setForm(cached);
+    api(url)
+      .then((data) => {
+        const value = data && data.id ? data : {
+          name: "", legal_name: "", secp: "", ntn: "", tax_status: "Active", address: "", website: "", summary: "", blacklisted: false,
+        };
+        setForm(value);
+        cacheSet(url, value);
+      })
+      .catch((e) => setError(e.message));
   }, [setError]);
 
-  if (!form) return <FormSkeleton />;
+  if (!form) return <BrandLoader />;
 
   const save = async () => {
     setBusy(true);

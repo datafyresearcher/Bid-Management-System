@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearSession, getToken, getUser } from "../lib/api";
 import ThemeToggle from "./ThemeToggle";
-import { BrandLoader } from "./Loading";
+import BrandLoader from "./Loading";
 
 const APP_TAGLINE = "AI Powered Bid Management System";
 const COMPANY_NAME = "AL-Hussain Traders & Engineers PVT. LTD.";
@@ -161,7 +161,6 @@ export default function Shell({ children }) {
       </div>
     );
   }
-
   const logout = () => {
     clearSession();
     router.replace("/login");

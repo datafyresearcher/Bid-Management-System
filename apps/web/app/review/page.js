@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
-import { ListSkeleton } from "../../components/Loading";
+import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
+import BrandLoader from "../../components/Loading";
 
 const PAGE_SIZE = 50;
 
@@ -18,6 +18,7 @@ export default function ReviewPage() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -26,14 +27,30 @@ export default function ReviewPage() {
       offset: String((page - 1) * PAGE_SIZE),
     });
     if (role) params.set("role", role);
-    api(`/api/gates?${params.toString()}`)
-      .then(setGates)
+    const gatesUrl = `/api/gates?${params.toString()}`;
+    if (!hydrated.current) {
+      const cached = cacheGet(gatesUrl);
+      if (cached) {
+        setGates(cached);
+        setLoading(false);
+      }
+      hydrated.current = true;
+    }
+    api(gatesUrl)
+      .then((data) => {
+        setGates(data);
+        cacheSet(gatesUrl, data);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     const countParams = new URLSearchParams({ status });
     if (role) countParams.set("role", role);
-    api(`/api/gates/count?${countParams.toString()}`)
-      .then((data) => setTotal(data.total || 0))
+    const countUrl = `/api/gates/count?${countParams.toString()}`;
+    api(countUrl)
+      .then((data) => {
+        setTotal(data.total || 0);
+        cacheSet(countUrl, data);
+      })
       .catch(() => setTotal(0));
   }, [status, role, page]);
 
@@ -68,14 +85,7 @@ export default function ReviewPage() {
     }
   };
 
-  if (loading && !error) {
-    return (
-      <ListSkeleton
-        title="Review Queue"
-        sub="Every gate decision is recorded with actor, timestamp and comment in the audit trail."
-      />
-    );
-  }
+  if (loading && !error) return <BrandLoader />;
 
   return (
     <>

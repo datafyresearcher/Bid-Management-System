@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, fmtMoney } from "../../lib/api";
-import { ListSkeleton } from "../../components/Loading";
+import { api, cacheGet, cacheSet, fmtMoney } from "../../lib/api";
+import BrandLoader from "../../components/Loading";
 
 export default function LeadsPage() {
   const router = useRouter();
@@ -15,6 +15,7 @@ export default function LeadsPage() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const hydrated = useRef(false);
   const [form, setForm] = useState({
     title: "", buyer: "", category_internal: "Substations", area: "Punjab",
     expected_window: "", estimated_value: "", confidence_tier: "Medium", source_label: "Manual entry",
@@ -24,10 +25,21 @@ export default function LeadsPage() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (q) params.set("q", q);
-    api(`/api/leads?${params.toString()}`)
+    const url = `/api/leads?${params.toString()}`;
+    if (!hydrated.current) {
+      const cached = cacheGet(url);
+      if (cached) {
+        setLeads(cached.items);
+        setTotal(cached.total);
+        setLoading(false);
+      }
+      hydrated.current = true;
+    }
+    api(url)
       .then((data) => {
         setLeads(data.items);
         setTotal(data.total);
+        cacheSet(url, data);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -70,14 +82,7 @@ export default function LeadsPage() {
       router.push(`/opportunities/${result.opportunity_id}`);
     }, "Lead converted");
 
-  if (loading && !error) {
-    return (
-      <ListSkeleton
-        title="Leads Radar"
-        sub="Pre-tender intelligence: annual plans, budget signals and email inbox harvest. Converted leads auto-link to published tenders."
-      />
-    );
-  }
+  if (loading && !error) return <BrandLoader />;
 
   return (
     <>

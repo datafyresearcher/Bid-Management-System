@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, fmtDate, fmtMoney, stateClass } from "../../lib/api";
+import { api, cacheGet, cacheSet, fmtDate, fmtMoney, stateClass } from "../../lib/api";
 import SourceTag, { sourceLink, sourceName } from "../../components/SourceTag";
-import { ListSkeleton } from "../../components/Loading";
+import BrandLoader from "../../components/Loading";
 
 const STATES = [
   ["", "Everything (every captured tender)"],
@@ -47,9 +47,10 @@ export default function InboxPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  // True until the first fetch answers; the list then renders in place on
-  // every later refresh instead of collapsing to a skeleton again.
+  // True until the first fetch answers. A revisit of this tab hydrates from
+  // the session cache instead, so no loading screen appears at all.
   const [loading, setLoading] = useState(true);
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({
@@ -58,10 +59,21 @@ export default function InboxPage() {
     });
     if (state) params.set("state", state);
     if (q) params.set("q", q);
-    api(`/api/opportunities?${params.toString()}`)
+    const url = `/api/opportunities?${params.toString()}`;
+    if (!hydrated.current) {
+      const cached = cacheGet(url);
+      if (cached) {
+        setItems(cached.items);
+        setTotal(cached.total);
+        setLoading(false);
+      }
+      hydrated.current = true;
+    }
+    api(url)
       .then((data) => {
         setItems(data.items);
         setTotal(data.total);
+        cacheSet(url, data);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -129,14 +141,7 @@ export default function InboxPage() {
     }
   };
 
-  if (loading && !error) {
-    return (
-      <ListSkeleton
-        title="Tender Inbox"
-        sub="Raw and screened tenders from all sources. Score new items or override screening decisions."
-      />
-    );
-  }
+  if (loading && !error) return <BrandLoader />;
 
   return (
     <>
