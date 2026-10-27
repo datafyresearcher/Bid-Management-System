@@ -102,9 +102,10 @@ def capture_listing(
     """
     import hmac
 
+    from app import runtime
     from app.config import settings
     from app.connectors.registry import get_connector
-    from app.services import normalizer, runtime
+    from app.services import normalizer
     from app.services.utils import utcnow
 
     if not settings.capture_secret or not hmac.compare_digest(
