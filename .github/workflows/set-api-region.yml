@@ -1,0 +1,41 @@
+name: Point the API reader at Lahore
+
+on:
+  workflow_dispatch:
+
+# The Punjab e-procurement portal (eproc.punjab.gov.pk) intermittently refuses
+# connections from foreign datacenter IPs — every scan from the default
+# Virginia region times out, while the same read from Pakistan works. The
+# database also sits in AWS Asia-Pacific, so serving the API from Lahore cuts
+# its round trip roughly in half. This one-shot job moves the API project's
+# functions there; the next deployment picks the region up. Re-run after
+# changing your mind to move the functions back.
+
+concurrency:
+  group: vercel-production
+  cancel-in-progress: false
+
+jobs:
+  set-region:
+    name: Set the API function region
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set serverlessFunctionRegion to lhr1
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID: ${{ secrets.VERCEL_API_PROJECT_ID }}
+        run: |
+          VERCEL_TOKEN="$(printf '%s' "$VERCEL_TOKEN" | tr -d '\r\n')"
+          code=$(curl -s -o resp.json -w "%{http_code}" -X PATCH \
+            "https://api.vercel.com/v9/projects/$PROJECT_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"serverlessFunctionRegion": "lhr1"}')
+          echo "HTTP $code"
+          head -c 800 resp.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Vercel refused the region change — the plan may not offer lhr1, or the token lacks project-write scope. The functions are unchanged."
+            exit 1
+          fi
+          region=$(python3 -c "import json;print(json.load(open('resp.json')).get('serverlessFunctionRegion','?'))")
+          echo "API function region is now: $region"

@@ -178,10 +178,14 @@ class LiveClient:
                     # will not change the answer.
                     break
                 connection_failures += 1
-                if connection_failures > 1:
-                    # The host cannot be reached from here. One more try was
-                    # had; trying again would only hammer a portal that is
-                    # not answering.
+                if connection_failures > 2:
+                    # Three connection attempts is the ceiling. The portal we
+                    # read most — PPRA Punjab's e-procurement — accepts
+                    # connections from Pakistan but drops foreign ones
+                    # intermittently, so a couple of tries genuinely turn a
+                    # failed scan into a good one; beyond that, a host that
+                    # still will not open is not answering and should not be
+                    # hammered.
                     break
                 if attempt < self.retries:
                     backoff = 2 ** attempt
