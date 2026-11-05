@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Opportunity, Source, User
 from app.security import get_current_user, require_roles
+from app.source_registry import BRIDGE_FED_SOURCES
 from app.serializers import source as source_serializer
 from app.services import audit, jobs
 
@@ -212,6 +213,20 @@ def scan_source(source_id: int, user: User = Depends(require_roles("bid_manager"
     row = db.get(Source, source_id)
     if not row:
         raise HTTPException(status_code=404, detail="Source not found")
+    if row.code in BRIDGE_FED_SOURCES:
+        # A portal that refuses datacenter connections cannot be read from
+        # this deployment, so a scan request here would only fail and stamp
+        # the source as error even while the capture bridge is feeding it.
+        # Refuse without touching its recorded health.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{row.name} cannot be scanned from the cloud — the portal refuses "
+                "datacenter connections. It is read by the capture bridge on the "
+                "bid desk's machine (tools/ppra-bridge), which keeps it fed every "
+                "few hours."
+            ),
+        )
     try:
         result = jobs.run_source(db, row)
     except Exception as exc:

@@ -1,11 +1,12 @@
-"""Capture the PPRA Punjab tender listing and hand it to the BMS API.
+"""Capture the portals the cloud cannot reach and hand them to the BMS API.
 
-eproc.punjab.gov.pk refuses connections from every datacenter network, so the
-API can never read it directly — however patient the client and whichever
-cloud region it runs in. But the portal answers the bid desk's own network
-happily, and it answers a real browser: this script opens the listing in the
-machine's installed Chrome, walks the pages, and posts the raw HTML to the
-API's capture endpoint, where it runs through the same parser, normalizer and
+Two of the authorized portals — eproc.punjab.gov.pk (PPRA Punjab) and
+wapda.gov.pk (WAPDA) — refuse connections from datacenter networks as a
+class: the cloud scan times out or is reset at the TLS open, from every
+region. But the portals answer the bid desk's own network happily, and they
+answer a real browser. This script opens each listing in the machine's
+installed Chrome, walks the pages, and posts the raw HTML to the API's
+capture endpoint, where it runs through the same parser, normalizer and
 scorer a live scan would use.
 
 Setup, in tools/ppra-bridge:
@@ -19,7 +20,8 @@ Run by hand:
     .venv/Scripts/python capture.py
 
 The value for `secret` is the repository's BMS_CAPTURE_SECRET — the same value
-the deploy pipeline gives the API.
+the deploy pipeline gives the API. `sources` lists which portals to capture
+(default: PPRA Punjab only).
 """
 
 import json
@@ -31,8 +33,7 @@ from pathlib import Path
 import httpx
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
-LISTING_URL = "https://eproc.punjab.gov.pk/ActiveTenders.aspx"
-GRID_SELECTOR = "table[id*='rdgrdManageTender']"
+
 MAX_PAGES = 15
 
 
@@ -40,50 +41,78 @@ def log(message: str):
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
 
 
-def capture_pages() -> list[str]:
-    """Read every page of the listing grid in a real Chrome."""
-    from playwright.sync_api import sync_playwright
+def capture_ppra(page) -> list[str]:
+    """Read every page of the PPRA Punjab listing grid in a real browser."""
+    LISTING_URL = "https://eproc.punjab.gov.pk/ActiveTenders.aspx"
+    GRID_SELECTOR = "table[id*='rdgrdManageTender']"
 
     pages: list[str] = []
-    with sync_playwright() as p:
-        # channel="chrome" drives the machine's installed Chrome — its TLS
-        # handshake is a real browser's, which is what the portal's front
-        # door accepts. No browser download is needed for this.
-        browser = p.chromium.launch(channel="chrome", headless=True)
-        page = browser.new_page()
-        log("opening the listing")
-        page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
-        page.wait_for_timeout(1500)
-        pages.append(page.content())
+    log("opening the PPRA Punjab listing")
+    page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=90_000)
+    page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
+    page.wait_for_timeout(1500)
+    pages.append(page.content())
 
-        # The pager is a row of numbered postback links. Walk them in order;
-        # a page that repeats what we already have means the end.
-        while len(pages) < MAX_PAGES:
-            wanted = str(len(pages) + 1)
-            anchor = page.locator(f'a:text-is("{wanted}")').first
-            try:
-                if anchor.count() == 0:
-                    break
-            except Exception:
+    # The pager is a row of numbered postback links. Walk them in order;
+    # a page that repeats what we already have means the end.
+    while len(pages) < MAX_PAGES:
+        wanted = str(len(pages) + 1)
+        anchor = page.locator(f'a:text-is("{wanted}")').first
+        try:
+            if anchor.count() == 0:
                 break
-            anchor.click()
-            page.wait_for_load_state("domcontentloaded")
-            page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
-            page.wait_for_timeout(1200)
-            html = page.content()
-            if html == pages[-1]:
-                break
-            pages.append(html)
-            log(f"captured page {len(pages)}")
-        browser.close()
+        except Exception:
+            break
+        anchor.click()
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
+        page.wait_for_timeout(1200)
+        html = page.content()
+        if html == pages[-1]:
+            break
+        pages.append(html)
+        log(f"captured page {len(pages)}")
     return pages
 
 
-def submit(pages: list[str], config: dict) -> dict:
+def capture_wapda(page) -> list[str]:
+    """Read the WAPDA tender listing, which is a server-rendered WordPress page.
+
+    The pager hangs a plain query variable off the listing URL — no postbacks,
+    so each page is one navigation. A page that repeats the notices we already
+    have (or has none) means the end.
+    """
+    LISTING_URL = "https://wapda.gov.pk/wapda-tenders/"
+    POST_LINKS = "li.wp-block-post h4.wp-block-post-title a"
+    WAPDA_MAX_PAGES = 5
+
+    pages: list[str] = []
+    seen: set[str] = set()
+    for page_number in range(1, WAPDA_MAX_PAGES + 1):
+        url = LISTING_URL if page_number == 1 else f"{LISTING_URL}?query-4-page={page_number}"
+        log(f"opening WAPDA listing page {page_number}")
+        page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+        page.wait_for_timeout(1500)
+        links = page.eval_on_selector_all(POST_LINKS, "els => els.map(e => e.href)")
+        if not links or not [l for l in links if l not in seen]:
+            break
+        seen.update(links)
+        pages.append(page.content())
+    return pages
+
+
+# One capture routine per bridge-fed source, keyed by the source code the API
+# knows. Listed in app/source_registry.py as BRIDGE_FED_SOURCES.
+CAPTURES = {
+    "ppra_punjab": capture_ppra,
+    "wapda": capture_wapda,
+}
+
+
+def submit(pages: list[str], config: dict, source_code: str) -> dict:
     headers = {"X-Capture-Secret": config["secret"]}
     payload = {
-        "code": config.get("source_code", "ppra_punjab"),
+        "code": source_code,
         "pages": pages,
         "captured_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -111,19 +140,38 @@ def main() -> int:
         print("config.json is missing — copy config.example.json and fill it in.")
         return 1
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    try:
-        pages = capture_pages()
-    except Exception as exc:
-        log(f"capture failed: {exc}")
+    sources = config.get("sources") or ["ppra_punjab"]
+    unknown = [code for code in sources if code not in CAPTURES]
+    if unknown:
+        print(f"no capture routine for: {', '.join(unknown)}")
         return 1
-    log(f"captured {len(pages)} page(s); submitting")
-    result = submit(pages, config)
-    log(
-        "submitted: {notices} notices, {new} new, {scored} scored, health {health}".format(
-            **result
-        )
-    )
-    return 0
+
+    from playwright.sync_api import sync_playwright
+
+    failures = 0
+    with sync_playwright() as p:
+        # channel="chrome" drives the machine's installed Chrome — its TLS
+        # handshake is a real browser's, which is what these portals accept.
+        # No browser download is needed for this.
+        browser = p.chromium.launch(channel="chrome", headless=True)
+        page = browser.new_page()
+        for code in sources:
+            try:
+                pages = CAPTURES[code](page)
+                if not pages:
+                    raise RuntimeError("nothing could be captured")
+                log(f"{code}: captured {len(pages)} page(s); submitting")
+                result = submit(pages, config, code)
+                log(
+                    "{source}: {notices} notices, {new} new, {scored} scored, health {health}".format(
+                        **result
+                    )
+                )
+            except Exception as exc:
+                log(f"{code} failed: {exc}")
+                failures += 1
+        browser.close()
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

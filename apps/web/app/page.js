@@ -90,35 +90,39 @@ export default function DashboardPage() {
     const other = feed.records_other
       ? ` The other ${feed.records_other} are seeded demo records, not live tenders.`
       : "";
+    const bridged = feed.portals_bridge
+      ? ` ${feed.portals_bridge} more (${feed.bridge_names.join(", ")}) arrive through the bid desk's capture bridge — the portal refuses datacenter connections, so the desk's own machine reads it and hands the pages over.`
+      : "";
+    const liveTail = `${other}${bridged}`;
     if (feed.portals_unreachable) {
       // A host this deployment cannot reach is not going to be fixed by
       // pressing Scan again, so the banner must not suggest that it would.
       return {
         tone: "err",
-        text: `Live reading: ${read} ${count}${other} ${feed.portals_unreachable} portal(s) cannot be reached from this deployment (${feed.unreachable_names.join(", ")}) — their tenders are missing from this view. Scanning again will not help until the API runs where that host is reachable.`,
+        text: `Live reading: ${read} ${count}${liveTail} ${feed.portals_unreachable} portal(s) cannot be reached from this deployment (${feed.unreachable_names.join(", ")}) — their tenders are missing from this view. Scanning again will not help until the API runs where that host is reachable.`,
       };
     }
     if (feed.portals_failed) {
       return {
         tone: "err",
-        text: `Live reading: ${read} ${count}${other} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
+        text: `Live reading: ${read} ${count}${liveTail} ${feed.portals_failed} could not be read (${feed.failed_names.join(", ")}) — their tenders are missing from this view.`,
       };
     }
     if (feed.portals_never_read) {
       return {
         tone: "info",
-        text: `Live reading: ${read} ${count}${other} ${feed.portals_never_read} portal(s) have not been read yet — press Scan in the source register to read them.`,
+        text: `Live reading: ${read} ${count}${liveTail} ${feed.portals_never_read} portal(s) have not been read yet — press Scan in the source register to read them.`,
       };
     }
     if (feed.stale) {
       return {
         tone: "err",
-        text: `Live reading: ${read} ${count}${other} That is more than a day old, so this view may miss tenders published since.`,
+        text: `Live reading: ${read} ${count}${liveTail} That is more than a day old, so this view may miss tenders published since.`,
       };
     }
     return {
       tone: "ok",
-      text: `Live reading: ${read} ${count}${other} Every reference and notice link points at the authority's own site.`,
+      text: `Live reading: ${read} ${count}${liveTail} Every reference and notice link points at the authority's own site.`,
     };
   })();
 
@@ -366,7 +370,17 @@ export default function DashboardPage() {
                   <td data-label="Health"><span className={sourceHealthClass(s.health)}>{s.health}</span></td>
                   {canScan ? (
                     <td data-label="Read now">
-                      {s.type === "portal" ? (
+                      {s.type === "portal" && s.read_via === "bridge" ? (
+                        // A portal the cloud cannot reach is read by the
+                        // desk's capture bridge on its own schedule; a Scan
+                        // button here would only fail and stamp an error.
+                        <span
+                          className="badge badge-gray"
+                          title="This portal refuses datacenter connections, so it cannot be scanned from the cloud. The capture bridge on the bid desk's machine reads it every few hours."
+                        >
+                          Bridge
+                        </span>
+                      ) : s.type === "portal" ? (
                         <button
                           className="btn small"
                           disabled={scanning !== null}

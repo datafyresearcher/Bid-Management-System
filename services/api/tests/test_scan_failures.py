@@ -46,7 +46,7 @@ def test_the_startup_read_records_a_portal_it_could_not_reach(db, monkeypatch):
     from app.models import Source
     from app.services import jobs
 
-    source = db.query(Source).filter(Source.code == "ppra_punjab").first()
+    source = db.query(Source).filter(Source.code == "ntdc").first()
     assert source is not None
     source.health = "ok"
     source.last_scan_at = None
@@ -54,7 +54,7 @@ def test_the_startup_read_records_a_portal_it_could_not_reach(db, monkeypatch):
     db.commit()
     def explode(*args, **kwargs):
         raise RuntimeError(
-            "could not read https://eproc.punjab.gov.pk/ActiveTenders.aspx: "
+            "could not read https://ntdc.gov.pk/tendors: "
             "curl: (28) Connection timed out"
         )
 

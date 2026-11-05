@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from app.source_registry import BRIDGE_FED_SOURCES
+
 
 def iso(dt):
     if isinstance(dt, datetime):
@@ -204,6 +206,10 @@ def source(s):
         "authority": s.authority,
         "tier": s.tier,
         "access": s.access,
+        # How this deployment reads the portal: directly from the cloud, or
+        # through the bid desk's capture bridge because the portal refuses
+        # datacenter connections.
+        "read_via": "bridge" if s.code in BRIDGE_FED_SOURCES else "cloud",
         "listing_url": s.listing_url,
         "schedule_hours": s.schedule_hours,
         "enabled": s.enabled,

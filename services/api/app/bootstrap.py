@@ -3,6 +3,8 @@ import sys
 import time
 from pathlib import Path
 
+from app.source_registry import BRIDGE_FED_SOURCES
+
 logger = logging.getLogger("bms.bootstrap")
 
 # The connect timeout the cold start allows. A source is only attempted when
@@ -142,14 +144,15 @@ def read_within_budget(db, sources, budget=None):
     """Read the given sources until the budget is spent.
 
     Every portal is given a turn, and a portal that cannot be reached is
-    recorded as such rather than left looking healthy and unread. Two things
+    recorded as such rather than left looking healthy and unread. Three things
     make that possible:
 
-    * **Punjab is read first.** It is the only portal whose host may not
-      answer at all from here, and a host that does not answer is discovered
-      by trying to open a connection to it — which costs a few seconds. The
-      federal portals answer quickly from anywhere, so they can afford to
-      wait their turn.
+    * **Bridge-fed portals are not read here at all.** Punjab and WAPDA refuse
+      connections from datacenter networks as a class, so a startup read of
+      them can only fail — and stamp them as error behind the capture
+      bridge's back. The bridge feeds them; the cloud leaves them alone.
+    * **The remaining portals are read by tier.** The federal portals answer
+      quickly from anywhere, so they can afford to wait their turn.
     * **The budget is shared out fairly.** Each source gets a slice of what is
       left, so a slow portal cannot starve the one after it, and one request
       is bounded, so a portal that is slow today cannot spend the whole cold
@@ -160,7 +163,10 @@ def read_within_budget(db, sources, budget=None):
 
     limit = budget if budget is not None else settings.live_startup_budget
     started = time.monotonic()
-    ordered = sorted(sources, key=lambda s: (s.tier or "", s.code))
+    ordered = sorted(
+        (s for s in sources if s.code not in BRIDGE_FED_SOURCES),
+        key=lambda s: (s.tier or "", s.code),
+    )
     for index, source in enumerate(ordered):
         left = limit - (time.monotonic() - started)
         if left < CONNECT_ATTEMPT_COST:

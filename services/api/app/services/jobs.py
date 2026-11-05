@@ -12,6 +12,7 @@ from app import runtime
 from app.config import settings
 from app.db import SessionLocal
 from app.models import GateTask, NotificationEvent, Opportunity, Source
+from app.source_registry import BRIDGE_FED_SOURCES
 from app.services import notifications
 from app.services.utils import utcnow
 logger = logging.getLogger("bms.jobs")
@@ -345,6 +346,13 @@ def run_scan(db=None):
         )
         for source in sources:
             if source.type != "portal":
+                stats["skipped"] += 1
+                continue
+            if source.code in BRIDGE_FED_SOURCES:
+                # A portal that refuses datacenter connections cannot be read
+                # from here at all; the capture bridge feeds it instead. A
+                # live attempt would fail and stamp the source as error even
+                # while the bridge is keeping it fed, so it is left alone.
                 stats["skipped"] += 1
                 continue
             stats["sources"] += 1

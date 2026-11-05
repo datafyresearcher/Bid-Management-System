@@ -10,6 +10,7 @@ from app.db import get_db
 from app.models import GateTask, NotificationEvent, Opportunity, Source, User
 from app.security import get_current_user
 from app.serializers import gate_task, iso, notification, opportunity_brief, source
+from app.source_registry import BRIDGE_FED_SOURCES
 from app.services import ai_quality, workflow
 from app.services.utils import utcnow
 
@@ -135,15 +136,27 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
     )
     total_records = db.execute(select(func.count(Opportunity.id))).scalar_one()
 
+    # A portal the cloud cannot reach is not missing data when the capture
+    # bridge is feeding it. Counting those separately keeps the banner honest:
+    # they are neither "read directly" nor failing — they arrive by another road.
+    bridge_fed = [
+        s for s in portals
+        if s.code in BRIDGE_FED_SOURCES
+        and (s.last_scan_stats or {}).get("mode") == "bridge"
+        and s.health == "ok"
+    ]
+
     feed_status = {
         "mode": "saved-capture" if settings.fixtures else "live",
         "portals_total": len(portals),
         "portals_read_live": len(read_live),
+        "portals_bridge": len(bridge_fed),
         "portals_failed": len(failed),
         "portals_never_read": len(never_read),
         "portals_unreachable": len(unreachable),
         "failed_names": [s.name for s in failed],
         "unreachable_names": [s.name for s in unreachable],
+        "bridge_names": [s.name for s in bridge_fed],
         "last_scan_at": iso(last_scan),
         "records_total": total_records,
         "records_live": live_records,

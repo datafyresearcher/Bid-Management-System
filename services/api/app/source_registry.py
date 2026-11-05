@@ -15,6 +15,16 @@ Columns per row:
     listing_url
 """
 
+# Portals that refuse connections from datacenter networks as a class — they
+# time out or reset the TCP/TLS open from every cloud region, while answering
+# the bid desk's own network happily. No scan from this deployment can ever
+# read them, however patient the client. They are fed instead by the capture
+# bridge (tools/ppra-bridge): the desk's machine opens the listing in a real
+# browser and posts the raw pages to POST /api/sources/capture. The scheduled
+# scan and the Scan button must never try to read these live — a read that
+# cannot connect would only stamp a healthy, bridge-fed source as error.
+BRIDGE_FED_SOURCES = ("ppra_punjab", "wapda")
+
 SOURCES = [
     (
         "ppra_punjab",
