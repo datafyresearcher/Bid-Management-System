@@ -10,6 +10,8 @@ bridge-fed source as error and hide the bridge's work.
 
 import pytest
 
+from app.config import settings
+
 
 @pytest.fixture(autouse=True)
 def bridge_sources(db):
@@ -27,15 +29,23 @@ def bridge_sources(db):
     yield
 
 
-def test_run_scan_leaves_bridge_fed_portals_alone(db, monkeypatch):
+@pytest.fixture()
+def live_mode(monkeypatch):
+    """The suite runs in demo mode; the bridge only matters when reading live."""
+    monkeypatch.setattr(settings, "fixtures", False)
+
+
+def test_run_scan_leaves_bridge_fed_portals_alone(db, live_mode, monkeypatch):
     """The scheduled scan neither reads them nor touches their recorded state."""
     from app.models import Source
     from app.services import jobs
 
-    def explode(*args, **kwargs):
-        raise AssertionError("a bridge-fed portal must never be read live")
+    def fake_run_source(db, source, **kwargs):
+        if source.code in ("ppra_punjab", "wapda"):
+            raise AssertionError("a bridge-fed portal must never be read live")
+        return {"notices": 0, "new": 0, "scored": 0}
 
-    monkeypatch.setattr(jobs, "run_source", explode)
+    monkeypatch.setattr(jobs, "run_source", fake_run_source)
 
     stats = jobs.run_scan(db)
 
@@ -45,6 +55,18 @@ def test_run_scan_leaves_bridge_fed_portals_alone(db, monkeypatch):
         db.refresh(source)
         assert source.health == "ok"
         assert source.last_scan_stats["mode"] == "bridge"
+
+
+def test_in_demo_mode_the_fixtures_still_fill_the_database(db, monkeypatch):
+    """The demo pipeline seeds from the saved captures, bridge or no bridge."""
+    from app.services import jobs
+
+    read = []
+    monkeypatch.setattr(jobs, "run_source", lambda db, source, **kw: read.append(source.code) or {"notices": 0, "new": 0, "scored": 0})
+
+    jobs.run_scan(db)
+
+    assert "ppra_punjab" in read
 
 
 def test_the_scan_button_refuses_a_bridge_fed_portal(client, db, auth):
@@ -62,20 +84,26 @@ def test_the_scan_button_refuses_a_bridge_fed_portal(client, db, auth):
     assert source.last_scan_stats["mode"] == "bridge"
 
 
-def test_the_startup_read_skips_bridge_fed_portals(db, monkeypatch):
+def test_the_startup_read_skips_bridge_fed_portals(db, live_mode, monkeypatch):
     """A cold start does not spend its budget on hosts that cannot answer."""
     from app import bootstrap
     from app.models import Source
     from app.services import jobs
 
-    def explode(*args, **kwargs):
-        raise AssertionError("a bridge-fed portal must never be read live")
+    read = []
 
-    monkeypatch.setattr(jobs, "run_source", explode)
+    def fake_run_source(db, source, **kwargs):
+        read.append(source.code)
+        return {"notices": 0, "new": 0, "scored": 0}
+
+    monkeypatch.setattr(jobs, "run_source", fake_run_source)
 
     sources = db.query(Source).filter(Source.type == "portal").all()
     bootstrap.read_within_budget(db, sources, budget=60)
 
+    assert "ppra_punjab" not in read
+    assert "wapda" not in read
+    assert read, "the cloud-readable portals were still read"
     for code in ("ppra_punjab", "wapda"):
         source = db.query(Source).filter(Source.code == code).first()
         db.refresh(source)

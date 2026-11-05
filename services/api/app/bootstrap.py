@@ -147,10 +147,12 @@ def read_within_budget(db, sources, budget=None):
     recorded as such rather than left looking healthy and unread. Three things
     make that possible:
 
-    * **Bridge-fed portals are not read here at all.** Punjab and WAPDA refuse
+    * **Bridge-fed portals are not read live.** Punjab and WAPDA refuse
       connections from datacenter networks as a class, so a startup read of
       them can only fail — and stamp them as error behind the capture
-      bridge's back. The bridge feeds them; the cloud leaves them alone.
+      bridge's back. The bridge feeds them; the cloud leaves them alone. In
+      demo mode the saved fixtures read fine locally, so there the skip does
+      not apply.
     * **The remaining portals are read by tier.** The federal portals answer
       quickly from anywhere, so they can afford to wait their turn.
     * **The budget is shared out fairly.** Each source gets a slice of what is
@@ -163,8 +165,9 @@ def read_within_budget(db, sources, budget=None):
 
     limit = budget if budget is not None else settings.live_startup_budget
     started = time.monotonic()
+    live_readable = not settings.fixtures
     ordered = sorted(
-        (s for s in sources if s.code not in BRIDGE_FED_SOURCES),
+        (s for s in sources if not (live_readable and s.code in BRIDGE_FED_SOURCES)),
         key=lambda s: (s.tier or "", s.code),
     )
     for index, source in enumerate(ordered):

@@ -348,11 +348,13 @@ def run_scan(db=None):
             if source.type != "portal":
                 stats["skipped"] += 1
                 continue
-            if source.code in BRIDGE_FED_SOURCES:
+            if source.code in BRIDGE_FED_SOURCES and not settings.fixtures:
                 # A portal that refuses datacenter connections cannot be read
-                # from here at all; the capture bridge feeds it instead. A
-                # live attempt would fail and stamp the source as error even
-                # while the bridge is keeping it fed, so it is left alone.
+                # live from here; the capture bridge feeds it instead. A live
+                # attempt would fail and stamp the source as error even while
+                # the bridge is keeping it fed, so it is left alone. In demo
+                # mode the saved fixtures read fine locally, so the skip does
+                # not apply — the demo pipeline fills the database with them.
                 stats["skipped"] += 1
                 continue
             stats["sources"] += 1

@@ -118,7 +118,13 @@ def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db
         s for s in portals
         if (s.last_scan_stats or {}).get("mode") == "live" and s.health != "error"
     ]
-    never_read = [s for s in portals if not s.last_scan_at]
+    never_read = [
+        s for s in portals
+        # A bridge-fed portal is not waiting for a Scan — the button cannot
+        # read it and the register does not offer one. Its data arrives when
+        # the desk's capture bridge next runs.
+        if not s.last_scan_at and s.code not in BRIDGE_FED_SOURCES
+    ]
     last_scan = max((s.last_scan_at for s in portals if s.last_scan_at), default=None)
     # A portal this host cannot reach at all is not the same thing as one that
     # answered and failed. The first will not be fixed by pressing Scan again;
