@@ -11,9 +11,9 @@
       "area": "Federal",
       "estimated_value": 4500000000,
       "published_at": "2026-10-05",
-      "clarification_deadline": "2026-11-05",
-      "submission_deadline": "2026-11-20",
-      "opening_at": "2026-11-21",
+      "clarification_deadline": "2027-01-30",
+      "submission_deadline": "2027-02-20",
+      "opening_at": "2027-02-21",
       "description": "EPC/turnkey contract for the design, supply, installation, testing and commissioning of 500kV GIS substation expansion at Mardan with associated 500kV bay extensions. Contract under FIDIC Silver Book conditions. Single stage two envelope bidding on the EPMS portal."
     },
     {
@@ -27,8 +27,8 @@
       "area": "Federal",
       "estimated_value": 1180000000,
       "published_at": "2026-10-09",
-      "submission_deadline": "2026-11-12",
-      "opening_at": "2026-11-13",
+      "submission_deadline": "2027-02-12",
+      "opening_at": "2027-02-13",
       "description": "Supply of OPGW, conductor hardware and stringing equipment services for 220kV double circuit transmission line section between Jhelum and Mardan. Single stage one envelope."
     },
     {
@@ -42,8 +42,8 @@
       "area": "Federal",
       "estimated_value": 85000000,
       "published_at": "2026-10-11",
-      "submission_deadline": "2026-11-02",
-      "opening_at": "2026-11-02",
+      "submission_deadline": "2027-02-02",
+      "opening_at": "2027-02-02",
       "description": "Request for proposals for consultancy services: feasibility study and detailed design of transmission corridor reinforcement between existing 500kV corridors. Two stage two envelope process."
     }
   ]
