@@ -583,6 +583,58 @@ def test_a_decided_bid_is_closed_rather_than_expired(client, auth):
 
 
 # ----------------------------------------------------------------------
+# 2.1  The words on the screen
+# ----------------------------------------------------------------------
+
+
+def test_no_screen_prints_the_internal_workflow_state():
+    """The internal state name never reaches the reader.
+
+    The states are the system's own vocabulary: GATE1, SCREENED_OUT,
+    NORMALIZED. A screen that prints one of them shows the reader the
+    machinery instead of the bid. Every place that shows a state has to
+    put it through stateLabel() first.
+    """
+    import re
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[3] / "apps" / "web"
+    assert web.is_dir(), f"the web app is not where this test expects it: {web}"
+    # A state printed on its own: {o.state}, {opp.state}, {res.state}.
+    raw = re.compile(r"\{[A-Za-z_$][\w$]*(?:\.[\w$]+)*\.state\}")
+
+    offenders = []
+    scanned = 0
+    for path in web.rglob("*.js"):
+        if "node_modules" in path.parts or ".next" in path.parts:
+            continue
+        scanned += 1
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if raw.search(line):
+                offenders.append(f"{path.relative_to(web)}:{number}")
+
+    assert scanned > 0, "no web sources were scanned, so the check proved nothing"
+    assert not offenders, "raw workflow state printed on screen: " + ", ".join(offenders)
+
+
+def test_every_workflow_state_has_a_readable_name():
+    """Every state the system can be in has a word for the reader."""
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[3] / "apps" / "web" / "lib" / "api.js"
+    ).read_text(encoding="utf-8")
+
+    for state in (
+        "NEW", "NORMALIZED", "SCORED", "SCREENED_OUT", "AUTO_ARCHIVED",
+        "GATE1", "GATE2", "GATE3", "GATE4", "GATE5", "DOCS_FETCHED",
+        "ANALYZED", "DRAFTING", "ASSEMBLY", "READY_TO_SUBMIT", "SUBMITTED",
+        "EVALUATION", "WON", "LOST", "REJECTED", "ABANDONED",
+    ):
+        assert f"{state}:" in source, f"{state} has no readable name"
+
+
+# ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
 

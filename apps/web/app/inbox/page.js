@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, fmtDate, fmtMoney, stateClass } from "../../lib/api";
+import { api, cacheGet, cacheSet, fmtDate, fmtMoney, stateClass, stateLabel } from "../../lib/api";
 import SourceTag, { sourceLink, sourceName } from "../../components/SourceTag";
 import BrandLoader from "../../components/Loading";
 
@@ -98,7 +98,7 @@ export default function InboxPage() {
     setInfo("");
     try {
       const res = await api(`/api/opportunities/${id}/score`, { method: "POST" });
-      setInfo(`Scored ${Math.round(res.score_total)} → ${res.state}`);
+      setInfo(`Scored ${Math.round(res.score_total)} → ${stateLabel(res.state)}`);
       load();
     } catch (e) {
       setError(e.message);
@@ -230,7 +230,7 @@ export default function InboxPage() {
                 <td data-label="Category">{o.category_internal}<div className="muted">{o.tender_type}</div></td>
                 <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></td>
                 <td data-label="Deadline">{fmtDate(o.submission_deadline)}</td>
-                <td data-label="State"><span className={stateClass(o.state)}>{o.state}</span></td>
+                <td data-label="State"><span className={stateClass(o.state)}>{stateLabel(o.state)}</span></td>
                 <td data-label="">
                   <div className="row-actions">
                     {o.state === "NORMALIZED" ? (

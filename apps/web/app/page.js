@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, STAGE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, STAGE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, stateLabel, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
 import BrandLoader from "../components/Loading";
 
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                         <SourceTag source={o.source} />
                       </td>
                       <td data-label="Deadline" className="nowrap">{fmtDate(o.submission_deadline)}</td>
-                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{o.state}</span></td>
+                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{stateLabel(o.state)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
                         <SourceTag source={o.source} />
                       </td>
                       <td data-label="Value" className="nowrap">{fmtMoney(o.estimated_value, o.currency)}</td>
-                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{o.state}</span></td>
+                      <td data-label="State" className="nowrap"><span className={stateClass(o.state)}>{stateLabel(o.state)}</span></td>
                     </tr>
                   ))}
                 </tbody>
