@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  api, cacheGet, cacheSet, CHECKLIST_STATUSES, checklistStatusLabel, daysTo, DECISIONS, fmtDate, fmtDateTime,
-  fmtMoney, RELATED_KIND_LABELS, severityClass, stateClass, stateLabel, STAGE_LABELS,
+  api, cacheGet, cacheSet, CHECKLIST_STATUSES, checklistStatusLabel, daysTo, DECISIONS, documentsStatusLabel,
+  fmtDate, fmtDateTime, fmtMoney, RELATED_KIND_LABELS, severityClass, stateClass, stateLabel, STAGE_LABELS,
 } from "../../../lib/api";
 import { tierClass } from "../../../components/SourceTag";
 import BrandLoader from "../../../components/Loading";
@@ -263,7 +263,7 @@ export default function OpportunityPage() {
                 {opp.bid_security_percent ? ` — ${opp.bid_security_percent}% of the estimated value` : ""}
               </dd>
               <dt>Tender fee</dt><dd>{fmtMoney(opp.tender_fee, opp.currency)}</dd>
-              <dt>Documents</dt><dd>{opp.documents_status}</dd>
+              <dt>Documents</dt><dd>{documentsStatusLabel(opp.documents_status)}</dd>
               <dt>Submission mode</dt><dd>{opp.submission_mode}</dd>
             </dl>
             {opp.source ? (
@@ -416,7 +416,7 @@ export default function OpportunityPage() {
       {tab === "documents" ? (
         <div className="card">
           <div className="section-title">
-            <h3>Documents ({opp.documents.length}) — status: {opp.documents_status}</h3>
+            <h3>Documents ({opp.documents.length}) — status: {documentsStatusLabel(opp.documents_status)}</h3>
           </div>
           {opp.document_link ? (
             <p>

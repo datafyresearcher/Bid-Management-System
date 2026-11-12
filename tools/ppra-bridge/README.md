@@ -12,14 +12,24 @@ The portals it feeds are listed in `app/source_registry.py` as
 `BRIDGE_FED_SOURCES`; the API refuses to scan them live, so a failed cloud
 read can never stamp them as error behind the bridge's back.
 
+The bridge also carries the **tender documents** themselves across. The
+bidding document is the only place the bid security and the percentage it
+represents are stated, and it is the only place the implied BOQ value can come
+from — so the API asks this machine to fetch it, and this machine hands it
+over.
+
 ## One-time setup
 
 ```bat
 cd tools\ppra-bridge
 python -m venv .venv
-.venv\Scripts\pip install playwright httpx
+.venv\Scripts\pip install playwright httpx curl_cffi pypdf
 copy config.example.json config.json
 ```
+
+`curl_cffi` fetches the document files with a browser's TLS handshake, because
+the portal turns a plain client away at the handshake itself. `pypdf` reads the
+text out of a file too large to carry over whole.
 
 Put the capture secret into `config.json` — the same value the repository holds
 as `BMS_CAPTURE_SECRET` (the deploy pipeline gives it to the API). Ask the
@@ -39,6 +49,15 @@ The script prints what happened and the dashboard's source table shows the
 result: health flips to **ok**, the last-scan cell names the mode as **bridge**,
 and any new tenders flow into the inbox, scored as usual.
 
+The last step of the run carries over the documents for the tenders the bid
+team has approved whose portal cannot be reached from the cloud. The log names
+each one and what was read out of it — the bid security, the percentage, and
+the implied BOQ value:
+
+```
+tender 2841: bidding_document_50485054.pdf brought over — bid security 252000 at 3%, implied BOQ 8400000
+```
+
 ## Keep it fresh
 
 Register a Windows scheduled task so the capture runs on its own (every four
@@ -57,10 +76,12 @@ dashboard shows the source stale or in error, first check the task's last run
 ## Notes
 
 - The capture secret authenticates the machine, not a person — it can submit
-  captured listings and nothing else. It is revocable: clear the value in the
-  Vercel project settings and the door closes.
-- The script only reads the public listings. It never signs in to a portal,
-  and supplier registration and captcha pages are left alone.
+  captured listings and carry documents over, and nothing else. It is
+  revocable: clear the value in the Vercel project settings and the door
+  closes.
+- The script only reads the public listings and the public document files they
+  point at. It never signs in to a portal, and supplier registration and
+  captcha pages are left alone.
 - The raw first page of each capture is stored as the source's latest
   snapshot, so the parse stays auditable like every other capture in the
   system.

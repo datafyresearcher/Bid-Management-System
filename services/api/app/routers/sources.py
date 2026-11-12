@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +11,20 @@ from app.serializers import source as source_serializer
 from app.services import audit, jobs
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
+
+
+def _require_capture_secret(provided: str) -> None:
+    """The door for the bid desk's own machine.
+
+    An unconfigured or wrong secret reads as a missing route rather than a
+    forbidden one, so the door leaves no trace for strangers to knock on.
+    """
+    import hmac
+
+    from app.config import settings
+
+    if not settings.capture_secret or not hmac.compare_digest(provided, settings.capture_secret):
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 class SourceIn(BaseModel):
@@ -109,10 +123,7 @@ def capture_listing(
     from app.services import normalizer
     from app.services.utils import utcnow
 
-    if not settings.capture_secret or not hmac.compare_digest(
-        x_capture_secret, settings.capture_secret
-    ):
-        raise HTTPException(status_code=404, detail="Not found")
+    _require_capture_secret(x_capture_secret)
 
     row = db.execute(select(Source).where(Source.code == payload.code)).scalars().first()
     if not row:
@@ -193,6 +204,108 @@ def capture_listing(
         "scored": scored,
         "pages": len(pages),
         "health": row.health,
+    }
+
+
+@router.get("/documents-pending")
+def documents_pending(x_capture_secret: str = Header(default=""), db: Session = Depends(get_db)):
+    """The tender documents the bid desk's machine should fetch.
+
+    One portal refuses connections from datacenter networks, so this
+    deployment cannot fetch its documents — only the desk's own machine can.
+    The bid manager approves a tender in the cloud, the record is marked as
+    waiting for its document, and the machine that can reach the portal is
+    told which file to fetch and where to bring it.
+    """
+    _require_capture_secret(x_capture_secret)
+
+    from app.services import documents as documents_service
+
+    rows = (
+        db.execute(
+            select(Opportunity)
+            .where(Opportunity.documents_status == documents_service.AWAITING_BRIDGE)
+            .order_by(Opportunity.id)
+        )
+        .scalars()
+        .all()
+    )
+    pending = []
+    for opp in rows:
+        wanted = documents_service.pending_document_urls(opp)
+        if not wanted:
+            continue
+        pending.append(
+            {
+                "opportunity_id": opp.id,
+                "title": opp.title,
+                "reference": opp.buyer_ref,
+                "documents": wanted,
+            }
+        )
+    return pending
+
+
+@router.post("/capture/document")
+def capture_document(
+    opportunity_id: int = Form(...),
+    filename: str = Form(...),
+    kind: str = Form("bidding document"),
+    source_url: str = Form(""),
+    file: UploadFile = File(...),
+    x_capture_secret: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Take in a tender document fetched by the bid desk's own machine.
+
+    The file is stored and the tender is analysed again, so the fields that
+    only the document can give — the bid security and the percentage it
+    represents, the clauses, the deadlines — are read from the document
+    itself rather than from the listing's summary of it.
+
+    The address the file was fetched from is kept with it. A file too large
+    to carry over whole is handed over as its text, and the address is what
+    tells the record that the document has been dealt with.
+    """
+    _require_capture_secret(x_capture_secret)
+
+    from app.services import documents as documents_service
+    from app.services import workflow
+
+    opp = db.get(Opportunity, opportunity_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Document too large")
+
+    documents_service.save_document(db, opp, filename or "document.pdf", content, source_url=source_url)
+    # The stand-in written when nothing could be fetched is dropped now that
+    # the real document has arrived, so the analysis reads the document and
+    # not the summary of it.
+    documents_service.drop_placeholder_summary(db, opp)
+    opp.documents_status = "uploaded"
+    db.commit()
+
+    result = workflow.reanalyze(db, opp)
+    db.refresh(opp)
+    audit.record(
+        db,
+        "document.captured",
+        actor="capture bridge",
+        opportunity_id=opp.id,
+        detail={"filename": filename, "kind": kind, "size": len(content)},
+    )
+    return {
+        "opportunity_id": opp.id,
+        "documents_status": opp.documents_status,
+        "bid_security_amount": opp.bid_security_amount,
+        "bid_security_percent": opp.bid_security_percent,
+        "estimated_boq_value": opp.estimated_boq_value,
+        "analysis": result,
     }
 
 

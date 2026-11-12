@@ -278,6 +278,21 @@ export const RELATED_KIND_LABELS = {
   related: "Related document",
 };
 
+/** What has happened to a tender's documents, in the reader's words. */
+export const DOCUMENTS_STATUS_LABELS = {
+  none: "None yet",
+  metadata_only: "Listing only — no document",
+  uploaded: "Uploaded",
+  parsed: "Read",
+  fetched: "Downloaded",
+  link_only: "Link only — not downloaded",
+  awaiting_bridge: "Being fetched from the bid desk",
+};
+
+export function documentsStatusLabel(status) {
+  return DOCUMENTS_STATUS_LABELS[status] || status || "None yet";
+}
+
 export const DECISIONS = {
   1: [
     ["GO", "Go — pursue this tender"],

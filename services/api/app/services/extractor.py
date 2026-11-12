@@ -21,6 +21,7 @@ from app.llm import prompts, schemas
 from app.models import Document, ExtractedRequirement
 from app.services import audit
 from app.services import bid_summary
+from app.services import documents
 from app.services.utils import normalize_key, parse_amount, parse_date, parse_money, snippet
 
 # How much of a tender's text is read. A full bidding document runs to
@@ -272,6 +273,19 @@ def _first_money_after(text, triggers, window=160):
 def collect_text(db, opp) -> str:
     docs = db.execute(select(Document).where(Document.opportunity_id == opp.id)).scalars().all()
     return "\n\n".join(d.content_text or "" for d in docs if d.content_text)[:TEXT_CAP]
+
+
+def _only_the_stand_in_is_on_file(db, opp) -> bool:
+    """Whether the only document on file is the listing's stand-in.
+
+    The stand-in is written from what the portal's listing already said. A
+    real document beside it means there is something to read, and the reading
+    is worth keeping even while the document of record is still on its way.
+    """
+    names = db.execute(
+        select(Document.filename).where(Document.opportunity_id == opp.id)
+    ).scalars().all()
+    return all(name == documents.SUMMARY_FILENAME for name in names)
 
 
 def _classify_requirement(text: str) -> str:
@@ -604,6 +618,21 @@ def run(db, opp) -> dict:
     # fallback is added. This is what the grade should reflect.
     extracted = stored
 
+    # A tender whose document of record has not arrived yet has nothing to
+    # read the bid security from. What is on file is the listing's stand-in,
+    # which carries only what the portal already said, so nothing may be
+    # concluded from it — in particular no implied BOQ value, which would be
+    # a number with nothing behind it.
+    awaiting = opp.documents_status == documents.AWAITING_BRIDGE
+    if awaiting and _only_the_stand_in_is_on_file(db, opp):
+        for field in ("bid_security_amount", "bid_security_percent", "estimated_boq_value"):
+            detected.pop(field, None)
+        detected["boq_estimate_note"] = (
+            "The bidding document has not been retrieved yet, so the bid security and the "
+            "estimated BOQ value it implies have not been read. They are worked out once "
+            "the document arrives."
+        )
+
     # Only fields that map to a real Opportunity column are written back.
     settable = {
         "submission_deadline",
@@ -639,6 +668,15 @@ def run(db, opp) -> dict:
         if opp.documents_status in ("none", "uploaded"):
             opp.documents_status = "metadata_only"
         fallback = "No document text available — verify requirements manually from the notice."
+    elif awaiting:
+        # The document is on its way from the bid desk. The record says so
+        # rather than claiming the analysis was drawn from a document that
+        # is not here.
+        fallback = (
+            "The bidding document has not been retrieved yet — what is on file is the portal "
+            "listing's summary of it. Read the requirements and the bid security from the "
+            "document itself."
+        )
     elif stored == 0:
         opp.documents_status = "parsed"
         fallback = (

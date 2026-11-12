@@ -373,11 +373,23 @@ can be fetched or only linked to. What each one actually offers:
 
 | Source | The bidding document | Retrieved? |
 |--------|---------------------|------------|
-| `ppra_punjab` | The **Bidding Document** the listing row's second document column points at | **Yes** — downloaded and stored, with the tender notice and any corrigendum fetched beside it |
+| `ppra_punjab` | The **Bidding Document** the listing row's second document column points at | **Yes** — fetched by the capture bridge on the bid desk's machine, with the tender notice and any corrigendum fetched beside it |
 | `ntdc` | The tender's own file under `/bidding/…` | **Yes** — downloaded and stored, with its clarifications and amendments |
 | `epads_federal` | `pa.epads.gov.pk/procurement/SBD/p<id>/bidding-document.pdf` | **Yes** — downloaded and stored |
 | `epms_federal` | Behind a "Download Tender Document" button on the tender's own page | **Yes** — the page is read to find the file, and the file is downloaded |
 | `wapda` | The tender post carries the notice text; no file is published against it | **No** — the record links to the post on the authority's site |
+
+**The Punjab document is fetched by the bridge, not by the cloud.** The portal refuses connections from
+datacenter networks as a class, so the deployment cannot open the file at all — a request to it times
+out at the TLS open. Rather than spend the request's time on a connection that will not answer, the
+record is marked as *waiting for its document* when the bid manager approves it, and the bid desk's own
+machine — the one the portal does answer — fetches the file and hands it over. The document is then read
+and the tender analysed again, so the fields that only the document can give (the bid security, the
+percentage it represents, the clauses, the deadlines) are read from the document itself.
+
+A file too large to carry over in one request is handed over as **the text read from it**, with the
+address it was fetched from kept against it. The analysis is drawn from the words; the portal's own copy
+stays one click away on the record.
 
 **EPADS** is the neat one: the document is served from a path built out of the opportunity's own
 id, so the link is known from the listing alone and no extra request to the portal is needed to

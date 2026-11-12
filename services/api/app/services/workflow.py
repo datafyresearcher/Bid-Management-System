@@ -225,7 +225,13 @@ def run_analysis(db, opp):
     from app.services import checklist, documents, extractor, risk
 
     transition(db, opp, "DOCS_FETCHED", "gate1_go", detail="Fetching tender documents")
-    documents.fetch_for_opportunity(db, opp)
+    if _needs_the_bridge(db, opp):
+        # The portal refuses connections from here, so its documents are
+        # fetched by the bid desk's own machine. Waiting for that beats
+        # spending the request's time on a connection that will not open.
+        documents.mark_awaiting_bridge(db, opp)
+    else:
+        documents.fetch_for_opportunity(db, opp)
     extractor.run(db, opp)
     risk.run(db, opp)
     _build_compliance(db, opp)
@@ -240,6 +246,31 @@ def run_analysis(db, opp):
         sla_hours=GATE_SLA[2],
         inputs={"eligibility": _eligibility(db, opp), "requirements": _requirement_counts(db, opp)},
     )
+
+
+def _needs_the_bridge(db, opp) -> bool:
+    """Whether this tender's document has to come from the bid desk's machine.
+
+    One portal refuses connections from datacenter networks as a class, so
+    its documents have to be fetched where the portal answers — on the bid
+    desk's own machine. The question is asked of the record's own
+    references, because that is where the documents come from.
+
+    In demo mode nothing is fetched from a portal: the saved fixtures are
+    on this machine's own disk and are read directly, so the ordinary path
+    is the right one there.
+    """
+    from app.config import settings
+    from app.source_registry import BRIDGE_FED_SOURCES
+
+    if settings.fixtures:
+        return False
+    codes = {
+        ref.get("source_code")
+        for ref in (opp.source_refs or [])
+        if isinstance(ref, dict) and ref.get("source_code")
+    }
+    return bool(codes & set(BRIDGE_FED_SOURCES))
 
 
 def reanalyze(db, opp):

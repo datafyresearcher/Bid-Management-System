@@ -163,6 +163,10 @@ class Document(Base):
     filename = Column(String(400), nullable=False)
     doc_type = Column(String(60), default="unknown")
     file_path = Column(String(600), default="")
+    # Where the file came from on the authority's own site. A document
+    # carried over by the capture bridge is matched on this rather than on
+    # its name, so the same file is never fetched and filed twice.
+    source_url = Column(String(600), default="")
     size = Column(Integer, default=0)
     pages = Column(Integer)
     parsed = Column(Boolean, default=False)

@@ -307,6 +307,12 @@ document** — the instructions to bidders and the bid data sheet — and not in
 some portals publish alongside it. A record pointing at the notice can never carry an implied value,
 which is why the record points at the bidding document (`docs/05` §11.2.1).
 
+And the document has to actually be on file before any of it can be read. The Punjab portal refuses
+connections from datacenter networks, so the deployment cannot fetch that document itself; the bid
+desk's own machine does it (`docs/05` §11.2.1). Until the document arrives, the record says it is
+waiting for it and **no bid security, no percentage and no implied value are shown** — the listing's
+summary of the tender is not a document, and nothing may be worked out from it.
+
 **The submission checklist is generated from the document, with references.** The checklist of what
 must be submitted is read out of the bidding document, and each line carries the clause and page it
 came from, so it can be checked against the source rather than trusted. Items are `pending`,

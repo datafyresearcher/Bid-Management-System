@@ -31,6 +31,15 @@ CHUNK_OVERLAP = 150
 # clause needs to be able to turn to that page.
 PAGE_BREAK = "\n\f\n"
 
+# A record whose portal cannot be reached from here, and whose document is
+# therefore being fetched by the bid desk's own machine.
+AWAITING_BRIDGE = "awaiting_bridge"
+
+# The placeholder written when no document could be fetched. It carries only
+# what the listing already said, and is replaced by the real document when
+# that arrives.
+SUMMARY_FILENAME = "notice_summary.txt"
+
 
 def page_count(text: str) -> int:
     """How many pages a document's text holds."""
@@ -90,7 +99,7 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
     return chunks
 
 
-def save_document(db, opp, filename: str, content: bytes) -> Document:
+def save_document(db, opp, filename: str, content: bytes, source_url: str = "") -> Document:
     folder = storage_path() / "documents" / str(opp.id)
     folder.mkdir(parents=True, exist_ok=True)
     safe_name = re.sub(r"[^A-Za-z0-9._\- ]", "_", filename)[:180]
@@ -103,6 +112,7 @@ def save_document(db, opp, filename: str, content: bytes) -> Document:
         filename=safe_name,
         doc_type=classify_doc(filename),
         file_path=str(path),
+        source_url=(source_url or "")[:600],
         size=len(content),
         pages=page_count(text),
         parsed=not text.startswith("[PARSE_ERROR]"),
@@ -259,6 +269,98 @@ def document_link(opp) -> str:
         if url:
             return url
     return ""
+
+
+def pending_document_urls(opp) -> list[dict]:
+    """The documents this tender still needs, and where each one is.
+
+    A portal publishes more than one file against a tender — the bidding
+    document, the tender notice, and any correction published against it —
+    and the record carries the address of each. What is still missing is
+    decided by what is already on file: a document is matched on the address
+    it was fetched from, and on its name for the files that were fetched
+    before the address was kept. So the same document is not asked for twice,
+    even when what was filed is its text rather than the file itself.
+    """
+    on_file = {doc.filename for doc in (opp.documents or []) if doc.filename}
+    fetched_from = {
+        (doc.source_url or "").strip()
+        for doc in (opp.documents or [])
+        if (doc.source_url or "").strip()
+    }
+    wanted: list[dict] = []
+    seen: set[str] = set()
+    for ref in opp.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        candidates: list[dict] = []
+        primary = ref.get("document_url") or ""
+        if primary:
+            candidates.append(
+                {"url": primary, "kind": "bidding document", "title": "Bidding document"}
+            )
+        for entry in ref.get("related_documents") or []:
+            if isinstance(entry, dict) and entry.get("url"):
+                candidates.append(
+                    {
+                        "url": entry["url"],
+                        "kind": entry.get("kind") or "related",
+                        "title": entry.get("title") or "Related document",
+                    }
+                )
+        for candidate in candidates:
+            url = candidate["url"]
+            if url in seen:
+                continue
+            seen.add(url)
+            if url in fetched_from:
+                continue
+            name = url.split("?")[0].rsplit("/", 1)[-1]
+            if name and name in on_file:
+                continue
+            wanted.append({**candidate, "filename": name})
+    return wanted
+
+
+def drop_placeholder_summary(db, opp) -> bool:
+    """Remove the notice summary once the real document has arrived.
+
+    The summary is a stand-in, written from what the listing already said.
+    Left in place it would be read alongside the real document and dilute
+    what the analysis is drawn from.
+    """
+    removed = False
+    for doc in list(opp.documents or []):
+        if doc.filename != SUMMARY_FILENAME:
+            continue
+        db.delete(doc)
+        removed = True
+    if removed:
+        db.commit()
+        db.refresh(opp)
+    return removed
+
+
+def mark_awaiting_bridge(db, opp) -> int:
+    """Mark a tender whose document has to come from the bid desk's machine.
+
+    The portal refuses connections from here, so the document is fetched
+    where the portal answers. The stand-in written from the listing is kept
+    for now — it is what there is to read until the real document arrives —
+    and the record is marked so the desk's machine knows to go and fetch it.
+    """
+    saved = 0
+    if not any(doc.filename == SUMMARY_FILENAME for doc in (opp.documents or [])):
+        fallback = (
+            "Notice summary (the bidding document is being fetched from the bid desk).\n"
+            f"Title: {opp.title}\nBuyer: {opp.buyer_name}\nReference: {opp.buyer_ref}\n"
+            f"Description: {opp.description}\n"
+        )
+        save_document(db, opp, SUMMARY_FILENAME, fallback.encode("utf-8"))
+        saved = 1
+    opp.documents_status = AWAITING_BRIDGE
+    db.commit()
+    return saved
 
 
 def search_chunks(db, opportunity_id: int, query: str, limit: int = 5):

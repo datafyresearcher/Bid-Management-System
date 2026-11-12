@@ -12,7 +12,7 @@ scorer a live scan would use.
 Setup, in tools/ppra-bridge:
 
     python -m venv .venv
-    .venv/Scripts/pip install playwright httpx
+    .venv/Scripts/pip install playwright httpx curl_cffi pypdf
     copy config.example.json config.json   (fill in the secret)
 
 Run by hand:
@@ -35,6 +35,12 @@ import httpx
 CONFIG_PATH = Path(__file__).with_name("config.json")
 
 MAX_PAGES = 15
+
+# The largest document that may be carried over in one request. The API is
+# deployed on a platform that caps the size of a request body, and the
+# biggest bidding documents run past it. A file over this size is handed
+# over as the text read from it instead.
+MAX_UPLOAD_BYTES = 3_500_000
 
 
 def log(message: str):
@@ -160,6 +166,129 @@ def submit(pages: list[str], config: dict, source_code: str) -> dict:
         log(f"submit failed ({attempt + 1}/3): {last_error}")
         time.sleep(5 * (attempt + 1))
     raise RuntimeError(f"could not submit the capture: {last_error}")
+
+
+def extract_text(content: bytes) -> str:
+    """The text of a tender document, read here on the desk's machine.
+
+    A file too large to carry over whole is handed over as its text, because
+    what the analysis needs is the words, not the file. The portal's own copy
+    stays one click away on the record, so nothing is lost by it.
+    """
+    import io
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(content))
+    return "\n\f\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def push_documents(config: dict) -> dict:
+    """Fetch the tender documents the cloud cannot reach, and hand them over.
+
+    The portal refuses connections from datacenter networks, so the documents
+    it publishes can only be fetched from a machine the portal answers — this
+    one. The bid manager approves a tender in the cloud, the record is marked
+    as waiting for its document, and this run fetches it and brings it over.
+
+    The document is fetched with a browser's TLS handshake, because a plain
+    client is turned away at the handshake itself.
+    """
+    headers = {"X-Capture-Secret": config["secret"]}
+    api_url = config["api_url"].rstrip("/")
+
+    try:
+        response = httpx.get(
+            f"{api_url}/api/sources/documents-pending", headers=headers, timeout=60
+        )
+        if response.status_code != 200:
+            log(f"could not ask for the pending documents: HTTP {response.status_code}")
+            return {"tenders": 0, "documents": 0, "failed": 0}
+        pending = response.json()
+    except Exception as exc:
+        log(f"could not ask for the pending documents: {exc}")
+        return {"tenders": 0, "documents": 0, "failed": 0}
+
+    if not pending:
+        log("no tender is waiting for a document")
+        return {"tenders": 0, "documents": 0, "failed": 0}
+
+    from curl_cffi import requests as curl_requests
+
+    brought = 0
+    failed = 0
+    for item in pending:
+        for document in item.get("documents") or []:
+            url = document.get("url") or ""
+            if not url:
+                continue
+            name = document.get("filename") or url.rsplit("/", 1)[-1]
+            try:
+                response = curl_requests.get(url, impersonate="chrome124", timeout=180)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"HTTP {response.status_code}")
+                content = response.content
+                if not content:
+                    raise RuntimeError("empty response")
+            except Exception as exc:
+                log(f"could not fetch {name}: {exc}")
+                failed += 1
+                continue
+
+            # A request body is capped, and the largest bidding documents run
+            # past what may be carried over in one piece. What the analysis
+            # reads is the text, so an oversized file is handed over as the
+            # text read from it — with the address it was read from, so the
+            # record knows the document has been dealt with.
+            if len(content) > MAX_UPLOAD_BYTES:
+                try:
+                    text = extract_text(content)
+                except Exception as exc:
+                    log(f"{name} is too large to carry over and its text could not be read: {exc}")
+                    failed += 1
+                    continue
+                content = text.encode("utf-8")
+                name = f"{name.rsplit('.', 1)[0]}.txt"
+                log(f"{name} was too large to carry over whole — its text was carried over instead")
+
+            try:
+                response = httpx.post(
+                    f"{api_url}/api/sources/capture/document",
+                    headers=headers,
+                    data={
+                        "opportunity_id": str(item.get("opportunity_id")),
+                        "filename": name,
+                        "kind": document.get("kind") or "bidding document",
+                        "source_url": url,
+                    },
+                    files={"file": (name, content, "application/pdf")},
+                    timeout=300,
+                )
+            except Exception as exc:
+                log(f"could not hand over {name}: {exc}")
+                failed += 1
+                continue
+
+            if response.status_code != 200:
+                log(f"the API refused {name}: HTTP {response.status_code} {response.text[:200]}")
+                failed += 1
+                continue
+
+            body = response.json()
+            brought += 1
+            log(
+                "tender {id}: {name} brought over — bid security {amount} at {percent}%, "
+                "implied BOQ {boq}".format(
+                    id=item.get("opportunity_id"),
+                    name=name,
+                    amount=body.get("bid_security_amount"),
+                    percent=body.get("bid_security_percent"),
+                    boq=body.get("estimated_boq_value"),
+                )
+            )
+
+    log(f"documents: {brought} brought over, {failed} could not be fetched")
+    return {"tenders": len(pending), "documents": brought, "failed": failed}
 
 
 def main() -> int:

@@ -105,6 +105,9 @@ ADDED_COLUMNS = {
     "company_profile": [
         ("email", "VARCHAR(200) DEFAULT ''"),
     ],
+    "documents": [
+        ("source_url", "VARCHAR(600) DEFAULT ''"),
+    ],
 }
 
 
