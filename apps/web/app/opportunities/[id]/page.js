@@ -286,6 +286,11 @@ export default function OpportunityPage() {
                     {opp.bid_security_form ? ` (${opp.bid_security_form})` : ""}
                     {opp.bid_security_percent ? ` — ${opp.bid_security_percent}% of the estimated value` : ""}
                   </>
+                ) : opp.bid_security_percent ? (
+                  <>
+                    {opp.bid_security_percent}% of the estimated value
+                    <div className="muted">The document states the share but no absolute amount.</div>
+                  </>
                 ) : (
                   <>
                     —
