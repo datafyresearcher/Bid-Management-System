@@ -19,12 +19,17 @@ Run by hand:
 
     .venv/Scripts/python capture.py
 
+The scheduled task registered by register-task.ps1 runs this under the
+venv's pythonw.exe instead, so no console window opens on the desktop.
+pythonw has no stdout, which is why every log line goes to bridge.log.
+
 The value for `secret` is the repository's BMS_CAPTURE_SECRET — the same value
 the deploy pipeline gives the API. `sources` lists which portals to capture
 (default: PPRA Punjab only).
 """
 
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -33,6 +38,7 @@ from pathlib import Path
 import httpx
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
+LOG_PATH = Path(__file__).with_name("bridge.log")
 
 MAX_PAGES = 15
 
@@ -44,7 +50,21 @@ MAX_UPLOAD_BYTES = 3_500_000
 
 
 def log(message: str):
-    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
+    """Log to bridge.log and, when a console exists, stdout as well.
+
+    The log file is the log of record because the scheduled task runs this
+    under pythonw.exe, where sys.stdout is None and print would raise.
+    """
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}"
+    try:
+        if LOG_PATH.exists() and LOG_PATH.stat().st_size > 512 * 1024:
+            LOG_PATH.replace(LOG_PATH.with_suffix(".log.old"))
+        with LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
+    if sys.stdout is not None:
+        print(line, flush=True)
 
 
 def pager_link(page, wanted: str):
@@ -183,6 +203,100 @@ def extract_text(content: bytes) -> str:
     return "\n\f\n".join((page.extract_text() or "") for page in reader.pages)
 
 
+TESSERACT_CANDIDATES = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+
+# Below this many characters a PDF's text is treated as unreadable. A scanned
+# page yields a stray header or nothing at all; a real page yields hundreds.
+MIN_TEXT_CHARS_PER_PAGE = 120
+
+
+def ocr_pdf(content: bytes) -> str:
+    """The text of a scanned tender document, read with OCR.
+
+    The authorities publish their notices as scans more often than they
+    should — a two-page NIT whose every page is a photograph. A text reader
+    gets a handful of characters out of it and the analysis is left with
+    nothing, so the record honestly reports it could not read the document.
+    The scan's own images, though, hold the words, and an OCR pass on this
+    machine reads them back.
+
+    Every page's embedded image is run through Tesseract. A page that yields
+    an image too small to be a scan — a logo, a signature strip — is passed
+    over. Small scans are enlarged first, because OCR accuracy falls away
+    below roughly 1500 pixels of width.
+    """
+    import io
+
+    import pytesseract
+    from PIL import Image
+    from pypdf import PdfReader
+
+    for candidate in TESSERACT_CANDIDATES:
+        if os.path.exists(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            break
+    # Neither candidate exists — the binary may still be on the PATH. This
+    # raises, with Tesseract's own error, when it is not.
+    pytesseract.get_tesseract_version()
+
+    reader = PdfReader(io.BytesIO(content))
+    pages = []
+    for page in reader.pages:
+        page_text = []
+        for image_info in page.images:
+            image = Image.open(io.BytesIO(image_info.data))
+            if image.width < 300:
+                continue
+            if image.width < 1500:
+                ratio = 1500 / image.width
+                image = image.resize((int(image.width * ratio), int(image.height * ratio)))
+            page_text.append(pytesseract.image_to_string(image, lang="eng"))
+        pages.append("\n".join(page_text))
+    return "\n\f\n".join(pages)
+
+
+def readable_text(content: bytes, name: str) -> str | None:
+    """The text of a tender document, with scans read by OCR.
+
+    Returns the text when the document can be read, or None when it cannot —
+    the caller then hands the file over whole and lets the API's own reader
+    deal with it. A PDF whose text comes back nearly empty is a scan, and the
+    scan is OCR'd here, where the words are turned into text the analysis can
+    read. The OCR'd text is what is carried over, so the record ends up with
+    something to analyse either way.
+    """
+    if not name.lower().endswith(".pdf"):
+        return None
+    try:
+        text = extract_text(content)
+    except Exception as exc:
+        log(f"{name} could not be read as a PDF: {exc}")
+        return None
+    from pypdf import PdfReader
+    import io
+
+    try:
+        pages = max(1, len(PdfReader(io.BytesIO(content)).pages))
+    except Exception:
+        pages = 1
+    if len(text.strip()) >= MIN_TEXT_CHARS_PER_PAGE * pages:
+        return None  # a text PDF — the API's own reader handles it well
+    log(f"{name} looks like a scan — its pages are being read with OCR")
+    try:
+        ocr_text = ocr_pdf(content)
+    except Exception as exc:
+        log(f"{name} could not be OCR'd: {exc}")
+        return None
+    if len(ocr_text.strip()) < MIN_TEXT_CHARS_PER_PAGE:
+        log(f"{name} held nothing the OCR could read either")
+        return ocr_text
+    log(f"{name}: OCR read {len(ocr_text.strip())} characters out of the scan")
+    return ocr_text
+
+
 def push_documents(config: dict) -> dict:
     """Fetch the tender documents the cloud cannot reach, and hand them over.
 
@@ -240,16 +354,30 @@ def push_documents(config: dict) -> dict:
             # reads is the text, so an oversized file is handed over as the
             # text read from it — with the address it was read from, so the
             # record knows the document has been dealt with.
+            #
+            # And a scan is read here whatever its size. The authorities
+            # publish notices as photographs more often than they should: a
+            # PDF handed over whole reads as nothing on the API's side, and
+            # the record is left honestly reporting it could not read the
+            # document. The words are in the scan, and the OCR reads them
+            # back — so the text is carried over instead of the image.
             if len(content) > MAX_UPLOAD_BYTES:
-                try:
-                    text = extract_text(content)
-                except Exception as exc:
-                    log(f"{name} is too large to carry over and its text could not be read: {exc}")
-                    failed += 1
-                    continue
+                text = readable_text(content, name)
+                if text is None:
+                    try:
+                        text = extract_text(content)
+                    except Exception as exc:
+                        log(f"{name} is too large to carry over and its text could not be read: {exc}")
+                        failed += 1
+                        continue
                 content = text.encode("utf-8")
                 name = f"{name.rsplit('.', 1)[0]}.txt"
                 log(f"{name} was too large to carry over whole — its text was carried over instead")
+            elif name.lower().endswith(".pdf"):
+                text = readable_text(content, name)
+                if text is not None:
+                    content = text.encode("utf-8")
+                    name = f"{name.rsplit('.', 1)[0]}.txt"
 
             try:
                 response = httpx.post(
@@ -293,13 +421,13 @@ def push_documents(config: dict) -> dict:
 
 def main() -> int:
     if not CONFIG_PATH.exists():
-        print("config.json is missing — copy config.example.json and fill it in.")
+        log("config.json is missing — copy config.example.json and fill it in.")
         return 1
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     sources = config.get("sources") or ["ppra_punjab"]
     unknown = [code for code in sources if code not in CAPTURES]
     if unknown:
-        print(f"no capture routine for: {', '.join(unknown)}")
+        log(f"no capture routine for: {', '.join(unknown)}")
         return 1
 
     from playwright.sync_api import sync_playwright
@@ -327,6 +455,20 @@ def main() -> int:
                 log(f"{code} failed: {exc}")
                 failures += 1
         browser.close()
+
+    # The documents themselves, for the tenders the bid team has approved and
+    # whose portal cannot be reached from the cloud.
+    try:
+        result = push_documents(config)
+        log(
+            "documents: {tenders} tender(s) waiting, {documents} brought over, {failed} failed".format(
+                **result
+            )
+        )
+    except Exception as exc:
+        log(f"the document step failed: {exc}")
+        failures += 1
+
     return 1 if failures else 0
 
 
