@@ -15,6 +15,7 @@ from app.models import GateTask, NotificationEvent, Opportunity, Source
 from app.source_registry import BRIDGE_FED_SOURCES
 from app.services import notifications
 from app.services.utils import utcnow
+from app.services.wording import state_label
 logger = logging.getLogger("bms.jobs")
 
 ACTIVE_STATES = {
@@ -416,8 +417,8 @@ def watchdogs(db=None):
             notifications.notify(
                 db,
                 "sla",
-                f"SLA overdue: {task.title[:90]}",
-                f"Gate {task.gate} overdue since {task.due_at} — escalate to {task.owner_role}",
+                f"Review time overdue: {task.title[:90]}",
+                f"Stage {task.gate} is past its review time — the {task.owner_role} role owns the decision.",
                 severity="warning",
                 opportunity_id=task.opportunity_id,
             )
@@ -444,7 +445,7 @@ def watchdogs(db=None):
                 db,
                 "deadline",
                 f"{prefix}Closing soon: {opp.title[:80]}",
-                f"Deadline {opp.submission_deadline} — state {opp.state}",
+                f"Deadline {opp.submission_deadline} — {state_label(opp.state)}",
                 severity="warning",
                 opportunity_id=opp.id,
             )

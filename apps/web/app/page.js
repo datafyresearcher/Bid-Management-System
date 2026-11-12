@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, STAGE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, stateLabel, urlHost, urlHostPath } from "../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, notificationTypeLabel, STAGE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, stateLabel, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
 import BrandLoader from "../components/Loading";
 
@@ -292,7 +292,7 @@ export default function DashboardPage() {
               {data.notifications.map((n) => (
                 <li key={n.id}>
                   <div>
-                    <span className={n.severity === "warning" ? "badge badge-amber" : "badge badge-blue"}>{n.type}</span>{" "}
+                    <span className={n.severity === "warning" ? "badge badge-amber" : "badge badge-blue"}>{notificationTypeLabel(n.type)}</span>{" "}
                     {n.opportunity_id ? (
                       <Link href={`/opportunities/${n.opportunity_id}`}>{n.title}</Link>
                     ) : (

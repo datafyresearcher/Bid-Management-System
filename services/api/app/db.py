@@ -367,6 +367,43 @@ def backfill_derived_document_links():
         session.close()
 
 
+def reword_notifications():
+    """Rewrite the stored notifications still speaking the machinery's words.
+
+    A notification is a row on file, and the ones written before the stage
+    wording reached them keep saying "Gate 1 pending" long after every
+    screen has stopped. The title and body of each stored event go through
+    the same wordbook the new ones use, so a panel of old and new events
+    reads as one voice.
+    """
+    from sqlalchemy import select
+
+    from app.models import NotificationEvent
+    from app.services.wording import reword_notification
+
+    session = SessionLocal()
+    try:
+        events = session.execute(select(NotificationEvent)).scalars().all()
+        changed = 0
+        for event in events:
+            title, body, dirty = reword_notification(event.title or "", event.body or "")
+            if not dirty:
+                continue
+            event.title = title
+            event.body = body
+            changed += 1
+        if changed:
+            session.commit()
+            logger.info("Reworded %s notifications written before the stage wording", changed)
+        return changed
+    except Exception as exc:
+        logger.warning("Notification wording backfill skipped: %s", exc)
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
 def init_db():
     from app import models
 
@@ -391,3 +428,4 @@ def init_db():
     backfill_opportunity_sources()
     backfill_ntdc_notice_links()
     backfill_derived_document_links()
+    reword_notifications()

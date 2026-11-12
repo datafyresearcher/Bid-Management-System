@@ -389,6 +389,30 @@ export function decisionLabel(gate, decision) {
   return decision.replace(/_/g, " ").toLowerCase();
 }
 
+/**
+ * What a notification's type means to the reader.
+ *
+ * The type is the machinery's word for why it spoke — "gate", "screen_out",
+ * "sla". The badge carries the bid team's word for the same thing.
+ */
+export const NOTIFICATION_TYPE_LABELS = {
+  gate: "Decision needed",
+  screen_out: "Screening",
+  sla: "Review overdue",
+  deadline: "Closing soon",
+  outcome: "Outcome",
+  submission: "Submission",
+  abandoned: "Abandoned",
+  scan: "New tenders",
+  lead: "Lead",
+};
+
+/** The reader-facing name of a notification type. */
+export function notificationTypeLabel(type) {
+  if (!type) return "Notice";
+  return NOTIFICATION_TYPE_LABELS[type] || type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
 export function stateClass(state) {
   if (!state) return "badge";
   if (["WON"].includes(state)) return "badge badge-green";

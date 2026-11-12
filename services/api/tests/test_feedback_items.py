@@ -1267,6 +1267,83 @@ def test_deciding_a_decided_stage_speaks_plainly(client, auth):
     assert "already" in detail.lower()
 
 
+def test_a_notification_badge_has_a_readable_name():
+    """The badge on a notification says why it spoke, in the team's words.
+
+    The panel showed "gate" and "screen_out" — the machinery's name for the
+    reason it spoke — where the reader wants "Decision needed" and
+    "Screening".
+    """
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[3] / "apps" / "web" / "lib" / "api.js"
+    ).read_text(encoding="utf-8")
+
+    for ntype in ("gate", "screen_out", "sla", "deadline", "outcome", "submission", "abandoned", "scan", "lead"):
+        assert f"{ntype}:" in source, f"notification type {ntype} has no readable name"
+
+
+def test_the_notifications_already_on_file_are_reworded(client):
+    """Stored notifications written before the wording change read like the new ones.
+
+    A notification is a row on file. The ones the system wrote while it still
+    said "Gate 1 pending" keep saying it for as long as they sit there, so
+    the start-up hands every stored title and body through the same wordbook
+    the new ones use.
+    """
+    from sqlalchemy import select
+
+    from app.db import reword_notifications
+    from app.models import NotificationEvent
+
+    old = [
+        ("gate", "Gate 1 pending: Go/No-Go — PROCUREMENT OF MEDICAL EQUIPMENT", "Owner role: bid_manager | SLA 24h"),
+        ("sla", "SLA overdue: Eligibility check — some tender", "Gate 2 overdue since 2026-11-12 09:00 — escalate to proposal_engineer"),
+        ("deadline", "#42 Closing soon: A tender about tablets", "Deadline 2026-11-14 10:00:00 — state GATE1"),
+        ("submission", "Submission not confirmed: A tender", "Gate 5 closed without submission confirmation — reopen when submitted."),
+        # Already plain — must come out exactly as it went in.
+        ("scan", "3 new tender(s) from NTDC Tenders", "Source ntdc scanned: 12 notices processed."),
+    ]
+    db = _session()
+    try:
+        for ntype, title, body in old:
+            db.add(NotificationEvent(type=ntype, title=title, body=body, severity="info"))
+        db.commit()
+    finally:
+        db.close()
+
+    assert reword_notifications() >= 4
+
+    db = _session()
+    try:
+        rows = db.execute(select(NotificationEvent)).scalars().all()
+    finally:
+        db.close()
+
+    by_title = {r.title: r for r in rows}
+    reworded = [t for t in by_title if t.startswith("Stage")]
+    assert len(reworded) >= 3, "the stored gate notifications were not reworded"
+
+    sla = next(r for r in rows if r.title.startswith("Review time overdue"))
+    assert "Stage 2 overdue since" in sla.body
+    assert "Gate" not in sla.body
+
+    deadline = next(r for r in rows if "Closing soon" in r.title)
+    assert "state GATE1" not in deadline.body
+    assert "Stage 1 — Go / No-Go" in deadline.body
+
+    closed = next(r for r in rows if r.title.startswith("Submission not confirmed"))
+    assert "Stage 5 closed" in closed.body
+    assert "Gate" not in closed.body
+
+    plain = next(r for r in rows if r.title == "3 new tender(s) from NTDC Tenders")
+    assert plain.body == "Source ntdc scanned: 12 notices processed."
+
+    # Running it again must find nothing left to do.
+    assert reword_notifications() == 0
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
