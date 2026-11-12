@@ -251,6 +251,26 @@ date, file and the family it belongs to (clarification / amendment / corrigendum
 being flattened into the notice's description text, because an amendment that moves a deadline has
 to be openable on its own and visible as a separate line on the tender.
 
+**The "Open notice" link opens the tender, not the website.** NTDC has no page per notice: its
+tenders page is a single-page application that opens each tender in a dialog, so there is no
+addressable URL for one tender. The tender *is* a file, and that file is what the notice link points
+at. 4,013 of the 4,022 notices in the feed publish one; the nine that do not fall back to the
+tenders listing, which stays reachable from the source register in any case.
+
+> **The second trap, of the same family.** Pointing every NTDC notice at the tenders listing looks
+> like a working link — the listing is a real page and it answers 200 — but the reader lands on the
+> NTDC home page with no sign of the tender they clicked. "The link works" and "the link opens the
+> tender" are different claims, and only the second one is worth anything.
+
+**File names have to be encoded.** The published names carry spaces, brackets and the occasional
+`#`. Left raw, a `#` would cut the link short at the fragment, and the rest of the file name would
+never reach the server — so the reader would be sent to the site instead of the tender. Paths are
+percent-encoded, and `%` is left alone so an already-encoded path is not encoded twice.
+
+Tenders captured before this was understood kept the listing as their notice link. Those links are
+rewritten in place at start-up, from the document link already captured against each record, so a
+tender that is already on file opens its own document without waiting for the next scan.
+
 ### 9.3 Capture mode
 
 The registry records whether a capture came off the live portal or from a saved copy of one
@@ -430,6 +450,7 @@ dashboard. Re-run the capture when a portal changes and the tests tell you what 
 | Records appear but with no closing date | The portal does not publish one | Expected for EPADS, NTDC and WAPDA; the deadline arrives with the notice document at Gate 2 |
 | Records appear with a document link instead of a page | The portal has no per-notice page | Expected for PPRA Punjab; the link opens the authority's own notice document |
 | A document link opens the website instead of the document | The path was read against the wrong base, and the portal's SPA answered 200 with its HTML shell | Check the URL against §9.2 — NTDC serves documents from the site root, not from `/uploads` |
+| "Open notice" opens the NTDC site rather than the tender | The notice link was pointed at the tenders listing, because the site has no page per notice | §9.2 — the notice link points at the tender's own file; the listing stays in the source register |
 | A tender appears twice | Two genuinely different notices share a name | Check the references: two different references are two different tenders |
 | Scan times out | The portal is slow today | Lower `BMS_LIVE_MAX_PAGES`; the scan is per source and can be repeated |
 

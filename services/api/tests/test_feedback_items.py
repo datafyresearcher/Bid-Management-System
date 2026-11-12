@@ -24,6 +24,50 @@ def test_the_ntdc_document_link_is_the_real_file(client, auth):
     assert "/uploads/" not in NTDCConnector.DOCUMENT_BASE
 
 
+def test_the_records_already_on_file_are_pointed_at_their_own_tender():
+    """Tenders captured before the fix open their own document too.
+
+    A record's notice link is rewritten in place from the document link
+    already captured against it, so a tender on file opens its own file
+    without waiting for the next scan.
+    """
+    from app.db import backfill_ntdc_notice_links
+    from app.models import Opportunity
+
+    db = _session()
+    try:
+        opp = Opportunity(
+            title="An NTDC tender captured with the old listing link",
+            buyer_name="NTDC",
+            buyer_ref="NTDC-OLD-1",
+            source_refs=[
+                {
+                    "source_code": "ntdc",
+                    "native_id": "ntdc-4448",
+                    "url": "https://ntdc.gov.pk/tendors",
+                    "document_url": "https://ntdc.gov.pk/bidding/Notice #4 & Lot-2.pdf",
+                }
+            ],
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    changed = backfill_ntdc_notice_links()
+    assert changed >= 1
+
+    db = _session()
+    try:
+        stored = db.get(Opportunity, opp_id)
+        ref = stored.source_refs[0]
+        assert ref["url"] == "https://ntdc.gov.pk/bidding/Notice%20%234%20%26%20Lot-2.pdf"
+        assert ref["url"] != "https://ntdc.gov.pk/tendors"
+    finally:
+        db.close()
+
+
 def test_a_document_that_is_really_a_page_is_refused():
     """An HTML page is never filed as a tender document.
 

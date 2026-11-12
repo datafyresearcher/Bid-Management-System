@@ -345,12 +345,84 @@ def test_ntdc_document_links_point_at_the_real_file():
         assert "/uploads/" not in url, notice
 
 
-def test_ntdc_notice_link_is_the_tenders_listing():
-    """The site publishes no page per notice, so the notice link is the list."""
+def test_ntdc_notice_link_opens_the_tender_not_the_website():
+    """The notice link has to open the tender itself.
+
+    NTDC publishes no page per notice — the tenders page is a single-page
+    application that opens each tender in a dialog — so the tender is a file
+    and that file is the only addressable link to it. Pointing the notice
+    link at the tenders listing instead meant the bid team clicked "Open
+    notice" and landed on the NTDC website with no sign of the tender.
+    """
     payload = json.loads(golden("ntdc.json"))
     notices = ntdc().parse_feed(payload)
+    assert notices
     for notice in notices:
-        assert notice["url"] == NTDCConnector.LISTING_URL, notice
+        assert notice["url"] == notice["document_url"], notice
+        assert notice["url"] != NTDCConnector.LISTING_URL, notice
+        assert notice["url"].startswith("https://ntdc.gov.pk/bidding/"), notice
+
+
+def test_ntdc_notice_link_falls_back_to_the_listing_when_no_file_was_published():
+    """Nine notices in the feed carry no file; those still have the listing."""
+    feed = [
+        {
+            "id": 1,
+            "title": "A notice with no published file",
+            "path": "",
+            "category_id": 3,
+            "published_on": _recent_published(),
+            "name": "IFB",
+            "ammendments": [],
+        }
+    ]
+    notices = ntdc().parse_feed(feed)
+    assert notices[0]["url"] == NTDCConnector.LISTING_URL
+
+
+def test_ntdc_encodes_a_file_name_that_would_otherwise_break_the_link():
+    """A '#' in a file name would otherwise cut the link short.
+
+    The rest of the file name would never reach the server, so the reader
+    would be sent to the site instead of the tender.
+    """
+    connector = ntdc()
+    url = connector.document_url("/bidding/Tender #4 & Lot-2.pdf")
+    assert url == "https://ntdc.gov.pk/bidding/Tender%20%234%20%26%20Lot-2.pdf"
+    assert "#" not in url
+    assert " " not in url
+
+
+def test_ntdc_encoding_is_not_applied_twice():
+    """A path that is already encoded stays as it is."""
+    from app.connectors.ntdc import encode_path
+
+    assert encode_path("/bidding/a%20b.pdf") == "/bidding/a%20b.pdf"
+
+
+def test_ntdc_notice_link_opens_the_tender_the_bid_team_asked_for():
+    """The real shape of an NTDC notice, from the live feed.
+
+    The file name carries spaces and the reference in brackets, and the
+    tender has to open from the notice link rather than from the site.
+    """
+    feed = [
+        {
+            "id": 4448,
+            "title": "ANNULMENT NOTICE: TENDER NO. 338/DM(Grid)/NKI/NGCP/KHI/2026 SUPPLY",
+            "path": "/bidding/Notice_of_Annulment_TENDER NO. 338DM(Grid)NKINGCPKHI2026.pdf",
+            "category_id": 5,
+            "published_on": _recent_published(),
+            "name": "Bidding Document",
+            "ammendments": [],
+        }
+    ]
+    notices = ntdc().parse_feed(feed)
+    url = notices[0]["url"]
+    assert url != NTDCConnector.LISTING_URL
+    assert url.startswith("https://ntdc.gov.pk/bidding/")
+    assert "%20" in url, "a space in the file name has to be encoded"
+    assert url == notices[0]["document_url"]
 
 
 def test_ntdc_captures_the_clarifications_published_with_a_tender():
@@ -391,7 +463,9 @@ def test_ntdc_captures_the_clarifications_published_with_a_tender():
     related = notices[0]["related_documents"]
     assert len(related) == 2
     assert related[0]["title"] == "Amendment No. 02"
-    assert related[0]["url"] == "https://ntdc.gov.pk/bidding/2.1 Amendment No. 02 - Bidders_6a58b3c1659cb.pdf"
+    assert related[0]["url"] == (
+        "https://ntdc.gov.pk/bidding/2.1%20Amendment%20No.%2002%20-%20Bidders_6a58b3c1659cb.pdf"
+    )
     assert related[0]["kind"] == "amendment"
     assert related[1]["kind"] == "clarification"
     assert notices[0]["document_url"] == "https://ntdc.gov.pk/bidding/IFB_6a38d56507bf6.pdf"
