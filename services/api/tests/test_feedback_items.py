@@ -654,6 +654,46 @@ def test_the_boq_estimate_reaches_the_record(client, auth):
     assert detail["boq_estimate_note"]
 
 
+def test_the_facts_are_on_the_record_even_when_the_request_runs_out_of_time(client, auth):
+    """A model call that hangs must not take the tender's numbers with it.
+
+    The bid security, the percentage it represents and the value that implies
+    are read out of the document itself, so they are written down and
+    committed before the model is asked. A request that has no time left for
+    the model still has them.
+    """
+    import time
+
+    from app import runtime
+
+    opp_id = _make_opportunity(client, auth, title="Facts first tender")
+    db, opp = _get(opp_id)
+    db.add(
+        _document_for(
+            db,
+            opp,
+            "ITT.txt",
+            "Bid security of PKR 90,000 shall be furnished, being 2% of the estimated cost. "
+            "Last date for submission of bids: 10-Feb-2027.",
+        )
+    )
+    db.commit()
+
+    # The request has two seconds left: there is no room for a model call.
+    runtime.set_deadline(time.monotonic() + 2)
+    try:
+        extractor.run(db, opp)
+    finally:
+        runtime.set_deadline(None)
+
+    db.refresh(opp)
+    assert opp.bid_security_amount == 90_000
+    assert opp.bid_security_percent == 2
+    assert opp.estimated_boq_value == 4_500_000
+    assert opp.requirements, "the requirements read from the document must be on the record"
+    db.close()
+
+
 def test_the_scale_a_tenders_own_table_uses_is_read_with_the_amount():
     """A tender's tables print the scale in brackets: "RS. 3.75 (M)" is three
     and three-quarter million, and reading it as three rupees seventy-five

@@ -56,3 +56,29 @@ def remaining(default=None):
     if value is None:
         return default
     return value - time.monotonic()
+
+
+def model_budget(reserve: float = 10.0, minimum: float = 5.0):
+    """What room is left in this request for a model call.
+
+    Returns ``(ask, deadline)``: whether the model should be asked at all, and
+    the absolute ``time.monotonic()`` value the call must stop at.
+
+    A model call that hangs would hold the request open for the whole
+    timeout — with retries on top of that — and the request would then be
+    killed, taking the work it had already done with it. So a call is bounded
+    by what is left of the request, keeping back the time the rest of the
+    work needs, and is not made at all when there is no room for it.
+
+    The work that has to happen whatever the model does — the facts read out
+    of the document, the compliance matrix, the checklist, opening the next
+    gate — does not depend on the model, and is done before it is asked.
+    """
+    value = _DEADLINE.get()
+    if value is None:
+        # Nothing is being timed, so the call has the provider's own timeout.
+        return True, None
+    room = value - time.monotonic() - reserve
+    if room < minimum:
+        return False, None
+    return True, time.monotonic() + room

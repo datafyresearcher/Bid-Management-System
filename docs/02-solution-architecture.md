@@ -394,6 +394,15 @@ The consequence is that a scan does less when it starts slowly, rather than fail
 is committed before the scoring begins, so a tender that reached the database is kept even when the
 scoring of it did not fit.
 
+**The facts are written down before the model is asked.** This is the same rule one step further
+along. A tender's bid security, the percentage it represents and the value that implies are read
+out of the document itself, and they are the numbers the bid room acts on — so they are written to
+the record and committed *before* the model is called, and the model only adds recall on top of
+them. An analysis that is cut off by the end of the request therefore keeps everything that was
+read from the document and loses only what the model had not yet added. The extraction and risk
+calls are bounded by what is left of the request's time, and are not made at all when there is no
+room for them — the same rule the scorer already followed.
+
 ---
 
 ## 12. Non-functional requirements (MVP targets)

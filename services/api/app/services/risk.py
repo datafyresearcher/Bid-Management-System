@@ -9,6 +9,7 @@ being merged in.
 
 from sqlalchemy import delete
 
+from app import runtime
 from app.llm import provider as llm
 from app.llm import prompts, schemas
 from app.models import RiskFlag
@@ -38,15 +39,22 @@ def run(db, opp) -> list:
             }
         )
 
+    # The clauses the rules found are written down before the model is asked,
+    # so a model call that runs past the end of the request cannot take them
+    # with it.
+    _write_flags(db, opp, flags)
+
     # --- AI layer ---
     provider = llm.get_provider()
-    if provider.enabled and text:
+    ask, model_deadline = runtime.model_budget()
+    if provider.enabled and text and ask:
         fenced = prompts.fence_untrusted(text[:LLM_CAP])
         result = provider.chat(
             prompts.RISK_V1["system"],
             fenced + "\n\nList contractor-side risk flags as JSON.",
             max_tokens=1200,
             task="risk",
+            deadline=model_deadline,
         )
         llm.record_metric(db, "risk", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():
@@ -77,9 +85,14 @@ def run(db, opp) -> list:
                     detail={"task": "risk", "errors": validation.error_text},
                 )
 
+    _write_flags(db, opp, flags)
+    audit.record(db, "opportunity.risk_analyzed", opportunity_id=opp.id, detail={"flags": len(flags)})
+    return flags
+
+
+def _write_flags(db, opp, flags: list) -> None:
+    """Put the risk flags on the record, replacing any that were there."""
     db.execute(delete(RiskFlag).where(RiskFlag.opportunity_id == opp.id))
     for flag in flags:
         db.add(RiskFlag(opportunity_id=opp.id, **flag))
     db.commit()
-    audit.record(db, "opportunity.risk_analyzed", opportunity_id=opp.id, detail={"flags": len(flags)})
-    return flags

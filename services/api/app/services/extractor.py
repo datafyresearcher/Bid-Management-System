@@ -16,6 +16,7 @@ import re
 
 from sqlalchemy import delete, select
 
+from app import runtime
 from app.llm import provider as llm
 from app.llm import prompts, schemas
 from app.models import Document, ExtractedRequirement
@@ -530,6 +531,65 @@ def _grade(detected: dict, requirement_count: int, has_text: bool) -> tuple:
     return grade, confidence
 
 
+def _apply_fields(opp, detected: dict) -> None:
+    """Put the fields that were detected on the record.
+
+    Only fields that map to a real Opportunity column are written back.
+    """
+    settable = {
+        "submission_deadline",
+        "opening_at",
+        "bid_security_amount",
+        "bid_security_form",
+        "bid_security_percent",
+        "estimated_boq_value",
+        "boq_estimate_note",
+        "tender_fee",
+        "pec_category_required",
+        "prequal_required",
+        "procurement_regime",
+    }
+    for field, value in detected.items():
+        if field == "qualification_thresholds":
+            merged = dict(opp.qualification_thresholds or {})
+            merged.update(value or {})
+            opp.qualification_thresholds = merged
+        elif field in settable:
+            setattr(opp, field, value)
+
+    # A percentage that was found on a previous read but is no longer stated
+    # must not stay behind as a stale number, or the implied BOQ value would
+    # keep pointing at a figure the document no longer supports.
+    if "bid_security_percent" not in detected:
+        opp.bid_security_percent = None
+        opp.estimated_boq_value = None
+    if "boq_estimate_note" not in detected:
+        opp.boq_estimate_note = ""
+
+
+def _replace_requirements(db, opp, requirements) -> int:
+    """Write the requirements found, replacing any that were there before."""
+    seen = set()
+    db.execute(delete(ExtractedRequirement).where(ExtractedRequirement.opportunity_id == opp.id))
+    stored = 0
+    for category, req_text, anchor, mandatory in requirements:
+        key = normalize_key(req_text)[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        db.add(
+            ExtractedRequirement(
+                opportunity_id=opp.id,
+                category=category,
+                text=req_text,
+                anchor=anchor,
+                mandatory=mandatory,
+            )
+        )
+        stored += 1
+    return stored
+
+
 def run(db, opp) -> dict:
     text = collect_text(db, opp)
     requirements = []
@@ -537,6 +597,22 @@ def run(db, opp) -> dict:
 
     # --- deterministic layer ---
     detected = _detect_fields(text)
+
+    # A tender whose document of record has not arrived yet has nothing to
+    # read the bid security from. What is on file is the listing's stand-in,
+    # which carries only what the portal already said, so nothing may be
+    # concluded from it — in particular no implied BOQ value, which would be
+    # a number with nothing behind it.
+    awaiting = opp.documents_status == documents.AWAITING_BRIDGE
+    if awaiting and _only_the_stand_in_is_on_file(db, opp):
+        for field in ("bid_security_amount", "bid_security_percent", "estimated_boq_value"):
+            detected.pop(field, None)
+        detected["boq_estimate_note"] = (
+            "The bidding document has not been retrieved yet, so the bid security and the "
+            "estimated BOQ value it implies have not been read. They are worked out once "
+            "the document arrives."
+        )
+
     if "submission_deadline" in detected:
         requirements.append(
             (
@@ -592,16 +668,29 @@ def run(db, opp) -> dict:
             if sentence_hits >= 25:
                 break
 
+    # --- the facts go on the record before the model is asked ---
+    #
+    # The bid security, the percentage it represents and the value that
+    # implies are read out of the document itself, and they are the numbers
+    # the bid room acts on. A model call that runs past the end of the
+    # request must not take them with it, so they are written down and
+    # committed first. The model only adds recall on top of them.
+    _apply_fields(opp, detected)
+    _replace_requirements(db, opp, requirements)
+    db.commit()
+
     # --- AI layer: extra recall, schema-validated ---
     llm_requirements = 0
     provider = llm.get_provider()
-    if provider.enabled and text:
+    ask, model_deadline = runtime.model_budget()
+    if provider.enabled and text and ask:
         fenced = prompts.fence_untrusted(text[:LLM_CAP])
         result = provider.chat(
             prompts.EXTRACT_V1["system"],
             fenced + "\n\nExtract the requirements as JSON.",
             max_tokens=1500,
             task="extract",
+            deadline=model_deadline,
         )
         llm.record_metric(db, "extract", result, opportunity_id=opp.id)
         if result.valid and result.text.strip():
@@ -622,74 +711,13 @@ def run(db, opp) -> dict:
                 )
 
     # --- persist ---
-    seen = set()
-    db.execute(delete(ExtractedRequirement).where(ExtractedRequirement.opportunity_id == opp.id))
-    stored = 0
-    for category, req_text, anchor, mandatory in requirements:
-        key = normalize_key(req_text)[:80]
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        db.add(
-            ExtractedRequirement(
-                opportunity_id=opp.id,
-                category=category,
-                text=req_text,
-                anchor=anchor,
-                mandatory=mandatory,
-            )
-        )
-        stored += 1
+    stored = _replace_requirements(db, opp, requirements)
 
     # How many requirements were genuinely extracted, before any system
     # fallback is added. This is what the grade should reflect.
     extracted = stored
 
-    # A tender whose document of record has not arrived yet has nothing to
-    # read the bid security from. What is on file is the listing's stand-in,
-    # which carries only what the portal already said, so nothing may be
-    # concluded from it — in particular no implied BOQ value, which would be
-    # a number with nothing behind it.
-    awaiting = opp.documents_status == documents.AWAITING_BRIDGE
-    if awaiting and _only_the_stand_in_is_on_file(db, opp):
-        for field in ("bid_security_amount", "bid_security_percent", "estimated_boq_value"):
-            detected.pop(field, None)
-        detected["boq_estimate_note"] = (
-            "The bidding document has not been retrieved yet, so the bid security and the "
-            "estimated BOQ value it implies have not been read. They are worked out once "
-            "the document arrives."
-        )
-
-    # Only fields that map to a real Opportunity column are written back.
-    settable = {
-        "submission_deadline",
-        "opening_at",
-        "bid_security_amount",
-        "bid_security_form",
-        "bid_security_percent",
-        "estimated_boq_value",
-        "boq_estimate_note",
-        "tender_fee",
-        "pec_category_required",
-        "prequal_required",
-        "procurement_regime",
-    }
-    for field, value in detected.items():
-        if field == "qualification_thresholds":
-            merged = dict(opp.qualification_thresholds or {})
-            merged.update(value or {})
-            opp.qualification_thresholds = merged
-        elif field in settable:
-            setattr(opp, field, value)
-
-    # A percentage that was found on a previous read but is no longer stated
-    # must not stay behind as a stale number, or the implied BOQ value would
-    # keep pointing at a figure the document no longer supports.
-    if "bid_security_percent" not in detected:
-        opp.bid_security_percent = None
-        opp.estimated_boq_value = None
-    if "boq_estimate_note" not in detected:
-        opp.boq_estimate_note = ""
+    _apply_fields(opp, detected)
 
     if not text:
         if opp.documents_status in ("none", "uploaded"):
