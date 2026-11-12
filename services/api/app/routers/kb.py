@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,7 +19,7 @@ from app.models import (
     User,
 )
 from app.security import get_current_user, require_roles
-from app.services import audit
+from app.services import audit, shared_documents
 from app.services.utils import parse_date
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge-base"])
@@ -116,6 +119,24 @@ class LibraryIn(BaseModel):
     tags: str = ""
     content_text: str = ""
     approved: bool = True
+    # A shared document is carried by every proposal; a locked one is the
+    # master copy and can only be changed from here.
+    shared: bool = True
+    locked: bool = False
+    category: str = "General"
+    valid_until: str = ""
+
+
+class SharedIn(BaseModel):
+    title: str
+    category: str = "General"
+    type: str = "evidence"
+    tags: str = ""
+    content_text: str = ""
+    shared: bool = True
+    locked: bool = False
+    approved: bool = True
+    valid_until: str = ""
 
 
 def _approved(db, model, row_id, approved):
@@ -378,10 +399,7 @@ def approve_certificate(row_id: int, payload: ApproveIn, user: User = Depends(WR
 @router.get("/library")
 def list_library(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(select(LibraryDocument)).scalars().all()
-    return [
-        {"id": r.id, "title": r.title, "type": r.type, "tags": r.tags, "approved": r.approved}
-        for r in rows
-    ]
+    return [shared_documents.document(r) for r in rows]
 
 
 @router.post("/library")
@@ -396,3 +414,99 @@ def add_library(payload: LibraryIn, user: User = Depends(WRITE_ROLES), db: Sessi
 @router.post("/library/{row_id}/approve")
 def approve_library(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
     return _approved(db, LibraryDocument, row_id, payload.approved)
+
+
+# ----------------------------------------------------------------------
+# Shared documents — the evidence every proposal carries
+# ----------------------------------------------------------------------
+
+
+@router.get("/shared")
+def list_shared(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The shared documents, and the families they belong to."""
+    return {
+        "documents": shared_documents.list_documents(db, shared_only=True),
+        "categories": shared_documents.CATEGORIES,
+    }
+
+
+@router.post("/shared")
+def add_shared(payload: SharedIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = LibraryDocument(**payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    audit.record(db, "kb.shared_added", actor=user.name, detail={"title": payload.title, "category": payload.category})
+    return shared_documents.document(row)
+
+
+@router.put("/shared/{row_id}")
+def update_shared(row_id: int, payload: SharedIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = db.get(LibraryDocument, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared document not found")
+    for field, value in payload.model_dump().items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    audit.record(db, "kb.shared_updated", actor=user.name, detail={"id": row_id, "title": row.title})
+    return shared_documents.document(row)
+
+
+@router.post("/shared/{row_id}/file")
+def upload_shared_file(
+    row_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(WRITE_ROLES),
+    db: Session = Depends(get_db),
+):
+    """Attach the file itself to a shared document."""
+    row = db.get(LibraryDocument, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared document not found")
+    content = file.file.read()
+    if len(content) > shared_documents.MAX_UPLOAD:
+        raise HTTPException(status_code=400, detail="File exceeds 30MB limit")
+    shared_documents.save_file(db, row, file.filename or "document.bin", content)
+    audit.record(
+        db,
+        "kb.shared_file_uploaded",
+        actor=user.name,
+        detail={"id": row_id, "title": row.title, "size": len(content)},
+    )
+    return shared_documents.document(row)
+
+
+@router.get("/shared/{row_id}/download")
+def download_shared(row_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Hand back the file a shared document was stored as."""
+    row = db.get(LibraryDocument, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared document not found")
+    if not row.file_path:
+        raise HTTPException(status_code=404, detail="No file has been attached to this document")
+    path = Path(row.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="The stored file is no longer on disk")
+    return FileResponse(
+        path,
+        filename=path.name.split("_", 1)[-1] or path.name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.delete("/shared/{row_id}")
+def delete_shared(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Remove a shared document from the knowledge base.
+
+    A locked document can only be removed from here — that is the whole
+    point of locking it.
+    """
+    row = db.get(LibraryDocument, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared document not found")
+    title = row.title
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.shared_deleted", actor=user.name, detail={"id": row_id, "title": title})
+    return {"id": row_id, "deleted": True}

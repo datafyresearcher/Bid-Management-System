@@ -34,6 +34,14 @@ def _record(db, opp) -> SubmissionRecord:
 
 
 def _base_checklist(db, opp):
+    """The list of things the bid still has to produce.
+
+    Three things go into it: the handful of items every bid needs whatever
+    the tender says, the items the tender itself asks for — read out of the
+    bidding document and kept with a reference to the clause it came from —
+    and the shared documents this proposal carries, which are already on
+    file and are marked as covered.
+    """
     items = []
     docs = db.execute(select(Document).where(Document.opportunity_id == opp.id)).scalars().all()
     items.append(
@@ -90,6 +98,45 @@ def _base_checklist(db, opp):
             "owner": "bid_manager",
         }
     )
+
+    # The items the bidding document itself asks for.
+    for entry in opp.checklist or []:
+        if not isinstance(entry, dict):
+            continue
+        label = entry.get("item") or ""
+        if not label:
+            continue
+        clause = entry.get("clause") or ""
+        page = entry.get("page")
+        reference = clause
+        if page:
+            reference = f"{clause}, page {page}" if clause else f"page {page}"
+        items.append(
+            {
+                "item": f"{label} — {reference}" if reference else label,
+                "category": f"requirement:{entry.get('category') or 'document'}",
+                "mandatory": bool(entry.get("mandatory", True)),
+                "status": entry.get("status") or "open",
+                "owner": "proposal_engineer",
+                "clause": clause,
+                "page": page,
+            }
+        )
+
+    # The shared documents this proposal carries.
+    from app.services import shared_documents
+
+    for entry in shared_documents.checklist_items(db, opp):
+        items.append(
+            {
+                "item": entry["item"],
+                "category": "shared",
+                "mandatory": False,
+                "status": "ready",
+                "owner": "proposal_engineer",
+            }
+        )
+
     compliance = (
         db.execute(select(ComplianceItem).where(ComplianceItem.opportunity_id == opp.id)).scalars().all()
     )
@@ -140,6 +187,24 @@ def build_pack(db, opp):
         encoding="utf-8",
     )
     files.append(docs_path.name)
+
+    # The shared documents the proposal carries, listed so that whoever
+    # assembles the pack knows which master copies have to go in.
+    from app.services import shared_documents
+
+    carried = [entry for entry in shared_documents.selection_for(db, opp) if entry["included"]]
+    shared_path = folder / "shared_documents.txt"
+    shared_path.write_text(
+        "\n".join(
+            f"- {entry['title']} [{entry['category']}]"
+            + (" (locked master copy)" if entry["locked"] else "")
+            + (f" — valid until {entry['valid_until']}" if entry.get("valid_until") else "")
+            for entry in carried
+        )
+        or "No shared documents carried by this proposal",
+        encoding="utf-8",
+    )
+    files.append(shared_path.name)
 
     sr = _record(db, opp)
     sr.checklist = _base_checklist(db, opp)

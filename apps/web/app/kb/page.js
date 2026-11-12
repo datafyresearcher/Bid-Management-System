@@ -11,8 +11,20 @@ const TABS = [
   ["personnel", "Personnel"],
   ["equipment", "Equipment"],
   ["certificates", "Certificates"],
-  ["library", "Library"],
+  ["shared", "Shared documents"],
+  ["library", "Reference library"],
 ];
+
+/** The reader-facing name of each summary card. */
+const SUMMARY_LABELS = {
+  licenses: "PEC licences",
+  financial_years: "Financial years",
+  projects: "Projects",
+  personnel: "Personnel",
+  equipment: "Plant & equipment",
+  certificates: "Certificates",
+  library: "Reference library",
+};
 
 export default function KbPage() {
   const [summary, setSummary] = useState(null);
@@ -48,7 +60,7 @@ export default function KbPage() {
         <div className="grid cols-4 mb-14">
           {Object.entries(summary).filter(([k]) => k !== "company").map(([key, val]) => (
             <div className="card" key={key}>
-              <h3>{key.replace("_", " ")}</h3>
+              <h3>{SUMMARY_LABELS[key] || key.replace("_", " ")}</h3>
               <div className="metric">{val.approved}<small>of {val.total} approved</small></div>
             </div>
           ))}
@@ -68,6 +80,7 @@ export default function KbPage() {
       {tab === "personnel" ? <PersonnelTab loadSummary={loadSummary} setInfo={setInfo} setError={setError} setBusy={setBusy} busy={busy} /> : null}
       {tab === "equipment" ? <EquipmentTab loadSummary={loadSummary} setInfo={setInfo} setError={setError} setBusy={setBusy} busy={busy} /> : null}
       {tab === "certificates" ? <CertificatesTab loadSummary={loadSummary} setInfo={setInfo} setError={setError} setBusy={setBusy} busy={busy} /> : null}
+      {tab === "shared" ? <SharedDocumentsTab setInfo={setInfo} setError={setError} setBusy={setBusy} busy={busy} /> : null}
       {tab === "library" ? <LibraryTab loadSummary={loadSummary} setInfo={setInfo} setError={setError} setBusy={setBusy} busy={busy} /> : null}
     </>
   );
@@ -327,7 +340,11 @@ function LibraryTab(props) {
   return (
     <>
       <div className="card mb-14">
-        <h3>Add library document</h3>
+        <h3>Add a reference document</h3>
+        <p className="muted">
+          Reference material the system reads when it drafts — policies, procedures, manuals. This
+          is not where the evidence every proposal carries goes; that belongs under Shared documents.
+        </p>
         <div className="inline-form">
           <div className="wide"><label>Title</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div><label>Type</label><input value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} /></div>
@@ -338,6 +355,201 @@ function LibraryTab(props) {
         <textarea value={form.content_text} onChange={(e) => setForm({ ...form, content_text: e.target.value })} />
       </div>
       <Table rows={rows} approve={approve} cols={["title", "type", "tags"]} busy={props.busy} />
+    </>
+  );
+}
+
+/**
+ * The shared documents — the evidence every proposal carries.
+ *
+ * These are held once here instead of being uploaded for each tender. A
+ * locked one is the master copy: it can only be changed or removed from
+ * here, never from inside a proposal, so no bid is built on a document
+ * somebody changed on the way past.
+ */
+function SharedDocumentsTab(props) {
+  const [rows, setRows] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState({
+    title: "",
+    category: "PEC certificate",
+    type: "evidence",
+    tags: "",
+    content_text: "",
+    locked: false,
+    valid_until: "",
+  });
+  const [files, setFiles] = useState({});
+
+  const load = useCallback(() => {
+    api("/api/kb/shared")
+      .then((data) => {
+        setRows(data.documents || []);
+        setCategories(data.categories || []);
+      })
+      .catch((e) => props.setError(e.message));
+  }, [props.setError]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const run = async (fn, message) => {
+    props.setBusy(true);
+    props.setError("");
+    props.setInfo("");
+    try {
+      await fn();
+      props.setInfo(message);
+      load();
+    } catch (e) {
+      props.setError(e.message);
+    } finally {
+      props.setBusy(false);
+    }
+  };
+
+  const create = () =>
+    run(
+      () => api("/api/kb/shared", { method: "POST", body: JSON.stringify(form) }),
+      "Shared document added"
+    );
+
+  const uploadFile = (id, file) => {
+    if (!file) return;
+    const body = new FormData();
+    body.append("file", file);
+    return run(
+      () => api(`/api/kb/shared/${id}/file`, { method: "POST", body }),
+      "File attached"
+    );
+  };
+
+  const toggleLock = (doc) =>
+    run(
+      () =>
+        api(`/api/kb/shared/${doc.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            title: doc.title,
+            category: doc.category,
+            type: doc.type,
+            tags: doc.tags,
+            content_text: "",
+            shared: doc.shared,
+            locked: !doc.locked,
+            approved: doc.approved,
+            valid_until: doc.valid_until,
+          }),
+        }),
+      doc.locked ? "Unlocked — it can now be left out of a proposal" : "Locked — it now travels with every proposal"
+    );
+
+  const remove = (doc) => {
+    if (!window.confirm(`Remove “${doc.title}” from the knowledge base?`)) return;
+    return run(() => api(`/api/kb/shared/${doc.id}`, { method: "DELETE" }), "Shared document removed");
+  };
+
+  return (
+    <>
+      <div className="card mb-14">
+        <h3>Add a shared document</h3>
+        <p className="muted">
+          Evidence the bid team attaches to the proposals it writes — the PEC certificate, the
+          procurement forms, the financial predictions, the credit line certificate. It is kept once
+          here rather than uploaded for every tender.
+        </p>
+        <div className="inline-form">
+          <div className="wide">
+            <label>Title</label>
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </div>
+          <div>
+            <label>Type</label>
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {categories.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Valid until</label>
+            <input value={form.valid_until} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} placeholder="2027-12-31" />
+          </div>
+          <div className="wide">
+            <label>Tags</label>
+            <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
+          </div>
+          <div className="wide">
+            <label>Locked master copy</label>
+            <select value={form.locked ? "yes" : "no"} onChange={(e) => setForm({ ...form, locked: e.target.value === "yes" })}>
+              <option value="no">No — can be left out of a proposal</option>
+              <option value="yes">Yes — always travels with the proposal</option>
+            </select>
+          </div>
+          <button className="btn primary" disabled={props.busy || !form.title} onClick={create}>
+            Add
+          </button>
+        </div>
+        <label>Notes</label>
+        <textarea value={form.content_text} onChange={(e) => setForm({ ...form, content_text: e.target.value })} />
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Document</th>
+                <th>Type</th>
+                <th>File</th>
+                <th>Valid until</th>
+                <th>Locked</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((doc) => (
+                <tr key={doc.id}>
+                  <td data-label="Document">
+                    {doc.title}
+                    <div className="muted">{doc.tags}</div>
+                  </td>
+                  <td data-label="Type">{doc.category}</td>
+                  <td data-label="File">
+                    <label className="sr-only">Attach a file to {doc.title}</label>
+                    <input
+                      type="file"
+                      onChange={(e) => uploadFile(doc.id, e.target.files && e.target.files[0])}
+                      disabled={props.busy}
+                    />
+                    {doc.has_file ? <div className="muted">A file is attached</div> : null}
+                  </td>
+                  <td data-label="Valid until">{doc.valid_until || "—"}</td>
+                  <td data-label="Locked">
+                    <button className={doc.locked ? "btn small primary" : "btn small"} disabled={props.busy} onClick={() => toggleLock(doc)}>
+                      {doc.locked ? "Locked" : "Not locked"}
+                    </button>
+                  </td>
+                  <td data-label="">
+                    <div className="row-actions">
+                      {doc.has_file ? (
+                        <a className="btn small" href={`/api/kb/shared/${doc.id}/download`} target="_blank" rel="noreferrer noopener">
+                          Open
+                        </a>
+                      ) : null}
+                      <button className="btn small danger" disabled={props.busy} onClick={() => remove(doc)}>
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 ? <tr><td colSpan="6" data-label="" className="muted">No shared documents yet.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </>
   );
 }

@@ -222,13 +222,14 @@ def _close_pending_gates(db, opp, comment=""):
 
 
 def run_analysis(db, opp):
-    from app.services import documents, extractor, risk
+    from app.services import checklist, documents, extractor, risk
 
     transition(db, opp, "DOCS_FETCHED", "gate1_go", detail="Fetching tender documents")
     documents.fetch_for_opportunity(db, opp)
     extractor.run(db, opp)
     risk.run(db, opp)
     _build_compliance(db, opp)
+    checklist.regenerate(db, opp)
     transition(db, opp, "ANALYZED", "analysis_complete", detail="Requirements, risks and compliance matrix ready")
     open_gate(
         db,
@@ -242,12 +243,13 @@ def run_analysis(db, opp):
 
 
 def reanalyze(db, opp):
-    from app.services import extractor, risk
+    from app.services import checklist, extractor, risk
 
     documents_result = None
     extractor_result = extractor.run(db, opp)
     risk_flags = risk.run(db, opp)
     compliance_added = _build_compliance(db, opp)
+    checklist.regenerate(db, opp)
     documents_result = {"compliance_added": compliance_added, "requirements": extractor_result.get("requirements"), "risk_flags": len(risk_flags)}
     audit.record(db, "opportunity.reanalyzed", opportunity_id=opp.id, detail=documents_result)
     return documents_result

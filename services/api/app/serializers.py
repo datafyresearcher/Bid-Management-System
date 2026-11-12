@@ -1,6 +1,39 @@
 from datetime import datetime
 
+from app.services.utils import utcnow
 from app.source_registry import BRIDGE_FED_SOURCES
+
+# The states a tender ends in. A tender in one of these is finished whatever
+# its deadline says, so it is not treated as merely out of date.
+FINAL_STATES = {"WON", "LOST", "REJECTED", "ABANDONED", "SCREENED_OUT", "AUTO_ARCHIVED"}
+
+# The states where the bid itself has been decided. These are closed, not
+# merely out of date — the bid room reads them differently, and they are
+# kept out of the "past deadline" section, which is for tenders that were
+# still live when their date passed.
+DECIDED_STATES = {"WON", "LOST", "REJECTED", "ABANDONED"}
+
+
+def deadline_status(o) -> str:
+    """Whether the bidding window is still open.
+
+    `open` — the tender can still be bid, or nothing is known about when it
+    closes. `expired` — the submission deadline has passed, so the tender
+    can no longer be bid. `closed` — the bid was decided: won, lost,
+    rejected or given up.
+
+    A tender that was screened out on merit is judged by its deadline like
+    any other. If its date has passed, it belongs in the past-deadline
+    section, because that is what the bidding team asked for: a tender
+    whose window has shut should not be left looking live.
+    """
+    if o.state in DECIDED_STATES:
+        return "closed"
+    if o.submission_deadline is None:
+        return "open"
+    if o.submission_deadline < utcnow():
+        return "expired"
+    return "open"
 
 
 def iso(dt):
@@ -67,9 +100,11 @@ def opportunity_brief(o):
         "submission_deadline": iso(o.submission_deadline),
         "opening_at": iso(o.opening_at),
         "state": o.state,
+        "deadline_status": deadline_status(o),
         "score_total": o.score_total,
         "hard_gate_result": o.hard_gate_result,
         "ai_rationale": o.ai_rationale,
+        "bid_summary": o.bid_summary,
         "ai_confidence": o.ai_confidence,
         "extraction_grade": o.extraction_grade,
         "documents_status": o.documents_status,
@@ -96,9 +131,18 @@ def opportunity_detail(o):
             "qualification_thresholds": o.qualification_thresholds,
             "bid_security_amount": o.bid_security_amount,
             "bid_security_form": o.bid_security_form,
+            "bid_security_percent": o.bid_security_percent,
+            "estimated_boq_value": o.estimated_boq_value,
+            "boq_estimate_note": o.boq_estimate_note,
             "tender_fee": o.tender_fee,
             "submission_mode": o.submission_mode,
             "checklist": o.checklist,
+            # The direct link to the bidding document on the authority's own
+            # site, and the clarifications and amendments published with it.
+            # The link is there whether or not the file was downloaded, so
+            # the bid team can always reach the document.
+            "document_link": document_link(o),
+            "related_documents": related_documents(o),
             "documents": [document(d) for d in o.documents],
             "requirements": [requirement(r) for r in o.requirements],
             "risk_flags": [risk(r) for r in o.risk_flags],
@@ -118,6 +162,51 @@ def opportunity_detail(o):
         }
     )
     return data
+
+
+def document_link(o) -> str:
+    """The direct link to the bidding document on the authority's site.
+
+    This is the fallback when the file could not be downloaded, and it is
+    kept on the record whatever happened to the download.
+    """
+    for ref in o.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        url = ref.get("document_url") or ""
+        if url:
+            return url
+    return ""
+
+
+def related_documents(o) -> list:
+    """The clarifications, amendments and addenda published with the tender.
+
+    Deduplicated across the notices the record was captured from, because a
+    tender seen on more than one notice must not offer the same
+    clarification twice.
+    """
+    seen = set()
+    out = []
+    for ref in o.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        for related in ref.get("related_documents") or []:
+            if not isinstance(related, dict):
+                continue
+            url = related.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(
+                {
+                    "title": related.get("title") or "Related document",
+                    "url": url,
+                    "date": related.get("date") or "",
+                    "kind": related.get("kind") or "related",
+                }
+            )
+    return out
 
 
 def document(d):
@@ -263,6 +352,7 @@ def source_attribution(o):
         "listing_url": listing_url,
         "notice_url": notice_url,
         "document_url": document_url,
+        "related_documents": related_documents(o),
         "reference": reference,
         "last_scan_at": iso(src.last_scan_at) if src else None,
         "scan_mode": (src.last_scan_stats or {}).get("mode", "") if src else "",

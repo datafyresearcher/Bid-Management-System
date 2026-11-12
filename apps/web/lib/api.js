@@ -186,34 +186,117 @@ export function slaIsOverdue(dueAt) {
   return due.getTime() < Date.now();
 }
 
-export const GATE_LABELS = {
-  1: "G1 Go/No-Go",
-  2: "G2 Eligibility",
-  3: "G3 Draft review",
-  4: "G4 Final approval",
-  5: "G5 Submission",
+/* ------------------------------------------------------------------
+ * Wording
+ *
+ * The bid team reads these pages, not the engineers who built them. The
+ * words on screen are theirs: a "gate" is a stage a bid moves through, and
+ * an "AI rationale" is an assessment of how well the tender fits us.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The five stages a bid moves through.
+ *
+ * The stage is where a person decides whether the bid goes on. The number
+ * is kept because the stages are always referred to in order.
+ */
+export const STAGE_LABELS = {
+  1: "Stage 1 — Go / No-Go",
+  2: "Stage 2 — Eligibility check",
+  3: "Stage 3 — Draft review",
+  4: "Stage 4 — Final approval",
+  5: "Stage 5 — Submission",
+};
+
+/** The stage name on its own, without the number. */
+export const STAGE_NAMES = {
+  1: "Go / No-Go",
+  2: "Eligibility check",
+  3: "Draft review",
+  4: "Final approval",
+  5: "Submission",
+};
+
+/**
+ * What each workflow state means to the reader.
+ *
+ * The states are the system's internal vocabulary; these are the words the
+ * bid team reads.
+ */
+export const STATE_LABELS = {
+  NEW: "New",
+  NORMALIZED: "Waiting to be reviewed",
+  SCORED: "Scored",
+  SCREENED_OUT: "Screened out",
+  AUTO_ARCHIVED: "Archived automatically",
+  GATE1: "Stage 1 — Go / No-Go",
+  GATE2: "Stage 2 — Eligibility check",
+  GATE3: "Stage 3 — Draft review",
+  GATE4: "Stage 4 — Final approval",
+  GATE5: "Stage 5 — Submission",
+  DOCS_FETCHED: "Fetching the tender documents",
+  ANALYZED: "Document analysis complete",
+  DRAFTING: "Drafting the proposal",
+  ASSEMBLY: "Assembling the submission pack",
+  READY_TO_SUBMIT: "Ready to submit",
+  SUBMITTED: "Submitted",
+  EVALUATION: "Under evaluation",
+  WON: "Won",
+  LOST: "Lost",
+  REJECTED: "Rejected",
+  ABANDONED: "Abandoned",
+};
+
+/** The reader-facing name of a workflow state. */
+export function stateLabel(state) {
+  if (!state) return "—";
+  return STATE_LABELS[state] || state;
+}
+
+/**
+ * The three states a submission checklist item can be in.
+ */
+export const CHECKLIST_STATUSES = [
+  ["pending", "Pending"],
+  ["complete", "Complete"],
+  ["not_applicable", "Not applicable"],
+];
+
+/** The reader-facing name of a checklist status. */
+export function checklistStatusLabel(status) {
+  const found = CHECKLIST_STATUSES.find(([value]) => value === status);
+  return found ? found[1] : "Pending";
+}
+
+/** What the related document is called, in the reader's words. */
+export const RELATED_KIND_LABELS = {
+  clarification: "Clarification",
+  amendment: "Amendment",
+  corrigendum: "Corrigendum",
+  evaluation: "Evaluation result",
+  related: "Related document",
 };
 
 export const DECISIONS = {
   1: [
-    ["GO", "Go"],
-    ["NO_GO", "No-Go"],
+    ["GO", "Go — pursue this tender"],
+    ["NO_GO", "No-Go — do not pursue"],
   ],
   2: [
-    ["CONFIRMED", "Confirm"],
-    ["NOT_CONFIRMED", "Not confirmed"],
+    ["CONFIRMED", "Confirm — we are eligible"],
+    ["NOT_CONFIRMED", "Not confirmed — we are not eligible"],
   ],
   3: [
-    ["APPROVED", "Approve"],
-    ["RETURNED", "Return"],
+    ["APPROVED", "Approve the draft"],
+    ["RETURNED", "Return for changes"],
   ],
   4: [
-    ["APPROVED", "Approve"],
-    ["RETURNED", "Return"],
+    ["APPROVED", "Approve for submission"],
+    ["RETURNED", "Return for changes"],
   ],
   5: [
     ["SUBMITTED", "Submitted"],
-    ["BLOCKED", "Blocked"],
+    ["BLOCKED", "Blocked — not submitted"],
   ],
 };
 

@@ -122,6 +122,19 @@ class LiveClient:
         """Fetch a page and return its text. Raises FetchError on failure."""
         return self._request("GET", url, headers=headers)
 
+    def get_bytes(self, url: str, headers: dict | None = None) -> tuple[bytes, str]:
+        """Fetch a binary file and return its bytes and content type.
+
+        Tender documents are PDF and Word files, so they cannot be read as
+        text. The content type matters as much as the bytes: a portal that
+        answers a request for a PDF with an HTML page — a site shell, a login
+        wall, an error page — returns a perfectly readable body that is not
+        the document. The caller is told what it actually got, so it can
+        refuse to file an HTML page as a tender document.
+        """
+        raw, content_type, _ = self._request_raw("GET", url, headers=headers)
+        return raw, content_type
+
     def post(self, url: str, data: dict, headers: dict | None = None) -> str:
         """Submit a form and return the response text.
 
@@ -131,6 +144,11 @@ class LiveClient:
         return self._request("POST", url, data=data, headers=headers)
 
     def _request(self, method: str, url: str, data: dict | None = None, headers: dict | None = None) -> str:
+        raw, _content_type, _response = self._request_raw(method, url, data=data, headers=headers)
+        return _decode_bytes(raw, _response)
+
+    def _request_raw(self, method: str, url: str, data: dict | None = None, headers: dict | None = None):
+        """Perform a request and return (raw bytes, content type, response)."""
         base_headers = {}
         if not (self.impersonate and self.browser_ua):
             # Only send our own identity when we are not impersonating a
@@ -170,7 +188,12 @@ class LiveClient:
                         response = client.request(method, url, data=data)
                 if response.status_code >= 400:
                     raise FetchError(f"HTTP {response.status_code} for {url}")
-                return _decode(response)
+                content_type = ""
+                try:
+                    content_type = response.headers.get("content-type", "") or ""
+                except Exception:
+                    content_type = ""
+                return response.content, content_type, response
             except Exception as exc:
                 last_error = exc
                 if not _is_connection_failure(exc):
@@ -194,15 +217,14 @@ class LiveClient:
         raise FetchError(f"could not read {url}: {last_error}")
 
 
-def _decode(response) -> str:
-    """Decode a response, preferring UTF-8.
+def _decode_bytes(raw: bytes, response) -> str:
+    """Decode a response body, preferring UTF-8.
 
     These portals serve UTF-8, but the client guesses latin-1 when the
     response carries no charset — and latin-1 turns a curly apostrophe into
     three mojibake characters. UTF-8 is tried strictly first; the response's
     own charset is only used when the bytes are genuinely not UTF-8.
     """
-    raw = response.content
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -219,3 +241,14 @@ def _decode(response) -> str:
         except (LookupError, UnicodeDecodeError):
             pass
     return raw.decode("utf-8", errors="replace")
+
+
+def _decode(response) -> str:
+    """Decode a response, preferring UTF-8.
+
+    These portals serve UTF-8, but the client guesses latin-1 when the
+    response carries no charset — and latin-1 turns a curly apostrophe into
+    three mojibake characters. UTF-8 is tried strictly first; the response's
+    own charset is only used when the bytes are genuinely not UTF-8.
+    """
+    return _decode_bytes(response.content, response)

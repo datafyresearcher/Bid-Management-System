@@ -228,6 +228,57 @@ def seed_kb(db):
     ]
     for title, doc_type, tags, content in library:
         db.add(LibraryDocument(title=title, type=doc_type, tags=tags, content_text=content, approved=True))
+
+    # The evidence every proposal carries. These are held once here instead
+    # of being uploaded afresh for each tender, and the bid team ticks the
+    # ones a particular bid needs.
+    shared = [
+        (
+            "PEC Certificate — Category C-A",
+            "PEC certificate",
+            "certificate",
+            "pec, licence, c-a, registration",
+            "Pakistan Engineering Council registration certificate, category C-A, held by AHTE. The master copy attached to every proposal as evidence of registration.",
+            True,
+        ),
+        (
+            "Procurement Forms — Standard Set",
+            "Procurement forms",
+            "forms",
+            "form a, form b, affidavit, undertaking, power of attorney",
+            "The standard set of procurement forms, affidavits, undertakings and the power of attorney, kept ready for every bid.",
+            True,
+        ),
+        (
+            "AHTE Financial Predictions",
+            "Financial predictions",
+            "financial",
+            "turnover, net worth, projection, forecast",
+            "AHTE's financial predictions used to support turnover and net worth requirements in pre-qualification.",
+            True,
+        ),
+        (
+            "Credit Line Certificate",
+            "Credit line certificate",
+            "certificate",
+            "credit line, bank guarantee, banking arrangement",
+            "The bank's credit line certificate confirming the facility available for bid security and performance guarantees.",
+            False,
+        ),
+    ]
+    for title, category, doc_type, tags, content, locked in shared:
+        db.add(
+            LibraryDocument(
+                title=title,
+                type=doc_type,
+                category=category,
+                tags=tags,
+                content_text=content,
+                approved=True,
+                shared=True,
+                locked=locked,
+            )
+        )
     db.commit()
     return True
 

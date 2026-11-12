@@ -20,6 +20,7 @@ from app.llm import provider as llm
 from app.llm import prompts, schemas
 from app.models import Document, ExtractedRequirement
 from app.services import audit
+from app.services import bid_summary
 from app.services.utils import normalize_key, parse_amount, parse_date, parse_money, snippet
 
 TEXT_CAP = 80000
@@ -68,6 +69,42 @@ BID_SECURITY_TRIGGERS = [
     r"earnest\s+money",
     r"bid\s+bond",
 ]
+
+# The bases a bid-security percentage can be taken of. A percentage on its
+# own says nothing; "2% of the estimated cost" says what to multiply.
+BOQ_BASE_PHRASES = (
+    "estimated cost",
+    "estimated value",
+    "estimated boq",
+    "boq value",
+    "bill of quantities",
+    "contract price",
+    "contract value",
+    "bid price",
+    "tender price",
+    "price of the contract",
+    "estimated amount",
+    "total contract value",
+)
+
+# Other things a tender states a percentage of, which sit close enough to a
+# bid security clause to be picked up by mistake. A percentage belonging to
+# one of these is not the bid security's percentage.
+OTHER_PERCENTAGE_SUBJECTS = (
+    "liquidated damages",
+    "liquidated damages",
+    "retention money",
+    "retention",
+    "advance payment",
+    "performance security",
+    "performance guarantee",
+    "price adjustment",
+    "escalation",
+    "defect liability",
+    "profit",
+    "markup",
+    "withholding",
+)
 
 TENDER_FEE_TRIGGERS = [
     r"tender\s+document\s+fee",
@@ -220,6 +257,51 @@ def _first_match(patterns, text, group=1):
     return None
 
 
+def _bid_security_percent(text: str):
+    """The share of the estimated BOQ value that the bid security represents.
+
+    A tender states it in the way the buyer likes: "bid security of 2% of
+    the estimated cost", "2% of the contract price shall be furnished as
+    bid security". The percentage is only usable when it is tied to a base
+    value, so a bare "2%" is not enough — and if the document quotes more
+    than one percentage against the same trigger, the figure is ambiguous
+    and nothing is assumed.
+
+    Returns ``(percent, ambiguous)``.
+    """
+    found = {}
+    for trigger in BID_SECURITY_TRIGGERS:
+        for anchor in re.finditer(trigger, text, re.I):
+            # The percentage can sit either side of the trigger, so the
+            # window is taken around it rather than after it.
+            start = max(0, anchor.start() - 160)
+            window = text[start : anchor.end() + 220]
+            for match in re.finditer(r"(\d{1,2}(?:\.\d{1,2})?)\s*(?:%|percent(?![a-z]))", window, re.I):
+                value = float(match.group(1))
+                if not 0 < value <= 100:
+                    continue
+                # It has to belong to the bid security, not to something
+                # else that happens to sit nearby — "liquidated damages at
+                # 0.05% of the contract price" is a percentage too, and so is
+                # "retain 5% of the contract value as retention money".
+                near = window[max(0, match.start() - 70) : match.start()].lower()
+                tail = window[match.end() : match.end() + 100].lower()
+                if any(other in near or other in tail for other in OTHER_PERCENTAGE_SUBJECTS):
+                    continue
+                # The percentage has to be tied to a base value for it to
+                # mean anything: "2% of the estimated cost".
+                if not any(phrase in tail for phrase in BOQ_BASE_PHRASES):
+                    continue
+                found.setdefault(value, match.start())
+    if not found:
+        return None, False
+    if len(found) > 1:
+        # More than one percentage — the document is not saying clearly which
+        # one the security is calculated on, so nothing is assumed.
+        return None, True
+    return next(iter(found)), False
+
+
 def _detect_fields(text: str) -> dict:
     """Pull the critical commercial fields out of the document text."""
     detected = {}
@@ -237,16 +319,46 @@ def _detect_fields(text: str) -> dict:
     amount = _closest_money(text, BID_SECURITY_TRIGGERS)
     if amount:
         detected["bid_security_amount"] = amount
-    else:
-        # Some notices quote bid security only as a percentage of the price.
-        segment = _after(text, BID_SECURITY_TRIGGERS, window=120) or ""
-        percent = re.search(r"(\d{1,2}(?:\.\d{1,2})?)\s*%", segment)
-        if percent:
-            detected["bid_security_percent"] = float(percent.group(1))
+    # The percentage is read whether or not an amount was found: a tender
+    # that states both is the normal case, and the implied BOQ value needs
+    # the two together.
+    percent, ambiguous = _bid_security_percent(text)
+    if percent:
+        detected["bid_security_percent"] = percent
+    elif ambiguous:
+        detected["bid_security_percent_ambiguous"] = True
     for form_kw in SECURITY_FORM_KEYWORDS:
         if form_kw in text.lower():
             detected["bid_security_form"] = form_kw.title()
             break
+
+    # --- implied BOQ value ---
+    # The estimated value of the work implied by the bid security:
+    #     estimated BOQ value = bid-security amount / bid-security percentage
+    # The percentage has to come from the tender document. Where it is not
+    # stated, or is stated ambiguously, the estimate is not made and the
+    # record says so instead.
+    if amount and percent:
+        detected["estimated_boq_value"] = round(amount / (percent / 100.0), 2)
+        detected["boq_estimate_note"] = (
+            f"Indicative only: implied from the bid security of {amount:,.0f} at {percent:g}% "
+            "of the estimated value. Confirm against the tender document before pricing."
+        )
+    elif amount and ambiguous:
+        detected["boq_estimate_note"] = (
+            "The tender states more than one percentage against the bid security, so the "
+            "estimated BOQ value has not been calculated. Verify the percentage from the tender document."
+        )
+    elif amount:
+        detected["boq_estimate_note"] = (
+            "The bid security amount was found, but the tender does not state the percentage it "
+            "represents, so the estimated BOQ value has not been calculated. Verify it from the tender document."
+        )
+    elif percent:
+        detected["boq_estimate_note"] = (
+            f"The bid security is stated as {percent:g}% of the estimated value, but no bid security "
+            "amount was found, so the estimated BOQ value has not been calculated."
+        )
 
     # --- tender fee ---
     amount = _closest_money(text, TENDER_FEE_TRIGGERS)
@@ -285,7 +397,39 @@ def _detect_fields(text: str) -> dict:
     if amount:
         detected["document_estimated_value"] = amount
 
+    # --- key personnel the tender asks for ---
+    personnel = _key_personnel(text)
+    if personnel:
+        detected["personnel"] = personnel
+
     return detected
+
+
+# The staff a tender names, and what it says about them. The bid team has to
+# know who has to be named in the bid before they can staff it.
+PERSONNEL_PATTERNS = [
+    re.compile(
+        r"[^.]{0,160}\b(?:project\s+manager|resident\s+engineer|site\s+(?:supervisor|manager|engineer)|"
+        r"construction\s+manager|general\s+supervisor|key\s+staff|key\s+personnel|technical\s+staff|"
+        r"team\s+leader|principal\s+engineer)\b[^.]{0,160}\.",
+        re.I,
+    ),
+]
+
+
+def _key_personnel(text: str) -> str:
+    """The key personnel a tender asks for, as one readable line."""
+    for pattern in PERSONNEL_PATTERNS:
+        match = pattern.search(text or "")
+        if not match:
+            continue
+        sentence = " ".join(match.group(0).split())
+        if len(sentence) < 25:
+            continue
+        if sentence.endswith("."):
+            sentence = sentence[:-1]
+        return sentence[:300]
+    return ""
 
 
 def _grade(detected: dict, requirement_count: int, has_text: bool) -> tuple:
@@ -433,6 +577,9 @@ def run(db, opp) -> dict:
         "opening_at",
         "bid_security_amount",
         "bid_security_form",
+        "bid_security_percent",
+        "estimated_boq_value",
+        "boq_estimate_note",
         "tender_fee",
         "pec_category_required",
         "prequal_required",
@@ -445,6 +592,15 @@ def run(db, opp) -> dict:
             opp.qualification_thresholds = merged
         elif field in settable:
             setattr(opp, field, value)
+
+    # A percentage that was found on a previous read but is no longer stated
+    # must not stay behind as a stale number, or the implied BOQ value would
+    # keep pointing at a figure the document no longer supports.
+    if "bid_security_percent" not in detected:
+        opp.bid_security_percent = None
+        opp.estimated_boq_value = None
+    if "boq_estimate_note" not in detected:
+        opp.boq_estimate_note = ""
 
     if not text:
         if opp.documents_status in ("none", "uploaded"):
@@ -475,6 +631,19 @@ def run(db, opp) -> dict:
     grade, confidence = _grade(detected, extracted, bool(text))
     opp.extraction_grade = grade
     opp.ai_confidence = confidence
+
+    # The sectioned summary, written from the same text and the same fields
+    # so that it can never disagree with the numbers above.
+    try:
+        opp.bid_summary = bid_summary.build(db, opp, text, detected)
+    except Exception as exc:
+        # A summary that cannot be written must not stop the extraction.
+        audit.record(
+            db,
+            "ai.summary_failed",
+            opportunity_id=opp.id,
+            detail={"error": str(exc)[:200]},
+        )
 
     db.commit()
     audit.record(

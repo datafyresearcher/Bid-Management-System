@@ -262,7 +262,7 @@ export default function AdminPage() {
                   {Object.entries(quality.llm_by_task || {}).map(([task, m]) => `${task}: ${m.calls} (invalid ${m.invalid})`).join(" · ") || "no calls recorded yet"}
                 </dd>
                 <dt>Scoring overrides</dt><dd>{quality.screening_overrides} of {quality.scores_total} scores ({Math.round((quality.override_rate || 0) * 100)}%)</dd>
-                <dt>Gate approvals / returns</dt><dd>{quality.gate_approvals} / {quality.gate_returns}</dd>
+                <dt>Stage approvals / returns</dt><dd>{quality.gate_approvals} / {quality.gate_returns}</dd>
                 <dt>Human approval rate</dt><dd>{Math.round((quality.gate_approval_rate || 0) * 100)}%</dd>
                 <dt>Bids decided</dt><dd>{quality.outcomes_total}</dd>
                 <dt>Win rate</dt>

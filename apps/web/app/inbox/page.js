@@ -8,7 +8,7 @@ import BrandLoader from "../../components/Loading";
 
 const STATES = [
   ["", "Everything (every captured tender)"],
-  ["GATE1", "Gate 1 open"],
+  ["GATE1", "Stage 1 — awaiting a decision"],
   ["NORMALIZED,SCORED,SCREENED_OUT,AUTO_ARCHIVED", "All triage states"],
   ["NORMALIZED", "New (not scored)"],
   ["SCORED,GATE1", "Passed screening"],
@@ -113,7 +113,7 @@ export default function InboxPage() {
     setBusy(true);
     try {
       await api(`/api/opportunities/${id}/override`, { method: "POST", body: JSON.stringify({ comment }) });
-      setInfo("Override recorded — Gate 1 opened");
+      setInfo("Override recorded — Stage 1 opened");
       load();
     } catch (e) {
       setError(e.message);
@@ -224,7 +224,7 @@ export default function InboxPage() {
                   <div className="muted">{o.buyer_name} {o.buyer_ref ? `· ${o.buyer_ref}` : ""}</div>
                   <SourceTag source={o.source} />
                   {o.hard_gate_result && !o.hard_gate_result.passed && o.hard_gate_result.failures && o.hard_gate_result.failures.length ? (
-                    <div className="muted">Gate failed: {o.hard_gate_result.failures.map((f) => f.reason).join("; ")}</div>
+                    <div className="muted">Eligibility check failed: {o.hard_gate_result.failures.map((f) => f.reason).join("; ")}</div>
                   ) : null}
                 </td>
                 <td data-label="Category">{o.category_internal}<div className="muted">{o.tender_type}</div></td>

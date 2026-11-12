@@ -81,15 +81,15 @@ export default function LoginPage() {
             <img src="/brand/ahte-logo.png" alt="" width="52" height="52" />
           </span>
           <div className="orbit-spinner">
-            {["G1", "G2", "G3", "G4", "G5"].map((gate, i) => (
-              <span key={gate} className={`orbit-node n${i + 1}`}>
-                <i>{gate}</i>
+            {["S1", "S2", "S3", "S4", "S5"].map((stage, i) => (
+              <span key={stage} className={`orbit-node n${i + 1}`}>
+                <i>{stage}</i>
               </span>
             ))}
           </div>
           <div className="scene-chip orbit-chip">
             <span className="chip-dot" />
-            G1 → G5 · every bid human-gated
+            5 stages · every bid approved by a person
           </div>
         </div>
       </div>
