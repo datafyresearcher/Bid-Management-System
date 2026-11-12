@@ -322,6 +322,11 @@ desk's own machine does it (`docs/05` §11.2.1). Until the document arrives, the
 waiting for it and **no bid security, no percentage and no implied value are shown** — the listing's
 summary of the tender is not a document, and nothing may be worked out from it.
 
+**A gate is only closed when the work behind it is done.** Approving a tender at Stage 1 runs the
+analysis, and the gate is opened again if the analysis does not finish — so a tender can never be
+left at Stage 1 with a closed gate, nothing to show and no way to move it. Re-analysing such a
+tender carries it on to the gate it was waiting for.
+
 **The submission checklist is generated from the document, with references.** The checklist of what
 must be submitted is read out of the bidding document, and each line carries the clause and page it
 came from, so it can be checked against the source rather than trusted. Items are `pending`,

@@ -7,7 +7,7 @@ from app.db import get_db
 from app.models import GateTask, User
 from app.security import get_current_user
 from app.serializers import gate_task
-from app.services import workflow
+from app.services import audit, workflow
 
 router = APIRouter(prefix="/api/gates", tags=["gates"])
 
@@ -96,6 +96,28 @@ def decide(gate_id: int, payload: DecideIn, user: User = Depends(get_current_use
     allowed = {task.owner_role, "admin", "management"}
     if user.role not in allowed:
         raise HTTPException(status_code=403, detail=f"Gate owned by role {task.owner_role}")
-    workflow.decide_gate(db, task, payload.decision, actor=user, comment=payload.comment, reason_code=payload.reason_code)
+    try:
+        workflow.decide_gate(db, task, payload.decision, actor=user, comment=payload.comment, reason_code=payload.reason_code)
+    except Exception as exc:
+        # The analysis did not finish, so the gate has been reopened and the
+        # tender is not stuck behind a closed decision. The reason is kept in
+        # the audit trail rather than in the reply, which the bid manager
+        # reads.
+        db.rollback()
+        audit.record(
+            db,
+            "gate.analysis_failed",
+            actor=user.name,
+            opportunity_id=task.opportunity_id,
+            gate_task_id=task.id,
+            detail={"error": str(exc)[:300]},
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The tender's documents could not be analysed, so the gate has been reopened "
+                "and the tender can be looked at again. The reason is in the audit trail."
+            ),
+        )
     db.refresh(task)
     return gate_task(task)

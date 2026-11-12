@@ -125,7 +125,15 @@ def decide_gate(db, task, decision, actor=None, comment="", reason_code=""):
 
     if task.gate == 1:
         if decision in APPROVE_DECISIONS:
-            run_analysis(db, opp)
+            try:
+                run_analysis(db, opp)
+            except Exception as exc:
+                # The gate is closed and the analysis did not finish, so the
+                # tender would sit at Stage 1 with nothing to show it and no
+                # way to move it. The gate is opened again, so the decision
+                # can be taken once the cause is dealt with.
+                reopen(db, task, opp, f"The analysis did not finish: {exc}"[:200])
+                raise
         elif decision in REJECT_DECISIONS:
             abandon(db, opp, reason_code or "no_go", comment, actor)
         else:
@@ -283,7 +291,53 @@ def reanalyze(db, opp):
     checklist.regenerate(db, opp)
     documents_result = {"compliance_added": compliance_added, "requirements": extractor_result.get("requirements"), "risk_flags": len(risk_flags)}
     audit.record(db, "opportunity.reanalyzed", opportunity_id=opp.id, detail=documents_result)
+    _finish_an_interrupted_analysis(db, opp)
     return documents_result
+
+
+def _finish_an_interrupted_analysis(db, opp) -> None:
+    """Carry a tender whose analysis was interrupted on to its next gate.
+
+    A tender approved at Stage 1 has its analysis run and its gate closed.
+    If the analysis does not finish — the request runs out of time, a
+    document cannot be read — the gate is closed and the tender is left at
+    Stage 1 with nothing to show it and no second gate to move to.
+
+    Re-analysing it completes what was left undone, so the tender is not
+    stranded: the analysis is done, and the gate it was waiting for is
+    opened.
+    """
+    if opp.state != "DOCS_FETCHED":
+        return
+    first = (
+        db.execute(
+            select(GateTask).where(GateTask.opportunity_id == opp.id, GateTask.gate == 1)
+        )
+        .scalars()
+        .first()
+    )
+    if not first or first.status != "APPROVED":
+        return
+    second = (
+        db.execute(
+            select(GateTask).where(GateTask.opportunity_id == opp.id, GateTask.gate == 2)
+        )
+        .scalars()
+        .first()
+    )
+    if second:
+        return
+
+    transition(db, opp, "ANALYZED", "analysis_completed", detail="Analysis completed on a re-analysis")
+    open_gate(
+        db,
+        opp,
+        gate=2,
+        title=f"Eligibility & requirements check — {opp.title[:100]}",
+        owner_role="proposal_engineer",
+        sla_hours=GATE_SLA[2],
+        inputs={"eligibility": _eligibility(db, opp), "requirements": _requirement_counts(db, opp)},
+    )
 
 
 def start_drafting(db, opp):

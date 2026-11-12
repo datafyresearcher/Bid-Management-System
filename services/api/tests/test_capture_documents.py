@@ -275,3 +275,90 @@ def test_the_stand_in_goes_with_its_chunks(client, db, auth, live_mode):
     assert (
         db.query(DocumentChunk).filter(DocumentChunk.document_id == summary[0].id).count() == 0
     )
+
+
+def test_a_tender_whose_analysis_failed_is_not_locked(client, db, auth, live_mode, monkeypatch):
+    """A failed analysis must not leave the tender behind a closed gate.
+
+    The gate is closed and the analysis is run. If the analysis does not
+    finish, the tender would sit at Stage 1 with nothing to show it and no
+    way to move — so the gate is opened again.
+    """
+    from app.models import GateTask, Opportunity
+    from app.services import workflow
+
+    opp_id = _capture_one(client, auth, "Bridge document failing analysis", "notice-f1", "bidding-f1")
+    opp = db.get(Opportunity, opp_id)
+    gate = (
+        db.query(GateTask)
+        .filter(GateTask.opportunity_id == opp_id, GateTask.gate == 1)
+        .first()
+    )
+    assert gate is not None
+
+    def _fail(db, opp):
+        raise RuntimeError("the knowledge base could not be read")
+
+    monkeypatch.setattr(workflow, "run_analysis", _fail)
+    resp = client.post(
+        f"/api/gates/{gate.id}/decide",
+        json={"decision": "GO", "comment": "proceed"},
+        headers=auth,
+    )
+    assert resp.status_code == 400, resp.text
+    assert "reopened" in resp.json()["detail"]
+
+    db.expire_all()
+    assert db.get(GateTask, gate.id).status == "PENDING"
+
+
+def test_a_tender_whose_analysis_was_interrupted_carries_on(client, db, auth, live_mode):
+    """Re-analysing a tender whose analysis was interrupted finishes it.
+
+    A tender approved at Stage 1 has its analysis run and its gate closed.
+    If the analysis does not finish, the tender is left at Stage 1 with no
+    second gate to move to. Re-analysing it completes what was left undone.
+    """
+    from app.models import GateTask, Opportunity
+    from app.services import documents as documents_service
+    from app.services import workflow
+
+    opp_id = _capture_one(client, auth, "Bridge document interrupted tender", "notice-i1", "bidding-i1")
+    opp = db.get(Opportunity, opp_id)
+    workflow.run_analysis(db, opp)
+    db.refresh(opp)
+
+    # The document arrived, and the request died before the analysis was
+    # finished: the gate is closed and there is no second gate.
+    documents_service.save_document(
+        db,
+        opp,
+        "bidding-i1.txt",
+        BIDDING_TEXT.encode("utf-8"),
+        source_url="https://eproc.punjab.gov.pk/BiddingDocuments/bidding-i1.pdf",
+    )
+    documents_service.drop_placeholder_summary(db, opp)
+    opp.state = "DOCS_FETCHED"
+    db.commit()
+    first = (
+        db.query(GateTask)
+        .filter(GateTask.opportunity_id == opp_id, GateTask.gate == 1)
+        .first()
+    )
+    first.status = "APPROVED"
+    db.commit()
+    assert (
+        db.query(GateTask).filter(GateTask.opportunity_id == opp_id, GateTask.gate == 2).count() == 0
+    )
+
+    workflow.reanalyze(db, opp)
+    db.expire_all()
+    opp = db.get(Opportunity, opp_id)
+    assert opp.state == "GATE2"
+    assert opp.estimated_boq_value == 2_000_000
+    second = (
+        db.query(GateTask)
+        .filter(GateTask.opportunity_id == opp_id, GateTask.gate == 2)
+        .first()
+    )
+    assert second is not None, "the tender must not be stranded at Stage 1"

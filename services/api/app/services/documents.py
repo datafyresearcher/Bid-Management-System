@@ -391,7 +391,14 @@ def mark_awaiting_bridge(db, opp) -> int:
     where the portal answers. The stand-in written from the listing is kept
     for now — it is what there is to read until the real document arrives —
     and the record is marked so the desk's machine knows to go and fetch it.
+
+    A tender whose document has already arrived is not waiting for one, so it
+    is left as it is.
     """
+    if any(doc.filename != SUMMARY_FILENAME for doc in (opp.documents or [])):
+        # The document has arrived; there is nothing to wait for.
+        return 0
+
     saved = 0
     if not any(doc.filename == SUMMARY_FILENAME for doc in (opp.documents or [])):
         fallback = (
