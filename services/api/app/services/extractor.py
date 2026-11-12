@@ -139,11 +139,30 @@ ESTIMATED_VALUE_TRIGGERS = [
 # A money token: an amount that is explicitly currency-denominated. Percentages
 # are deliberately excluded, so "bid security shall be 2% ... or Rs. 4,000,000"
 # resolves to the rupee figure rather than to "2".
+#
+# A figure directly followed by a percent sign is excluded too. A tender's own
+# table prints its column headings as "Estimated Cost in PKR 02% Bid Security
+# in PKR 01", and those are a rate and a serial number rather than amounts.
+#
+# The scale a tender's tables put in brackets — "RS. 3.75 (M)" — is part of
+# the amount and is read with it.
 MONEY_TOKEN = re.compile(
     r"(?:(?<![A-Za-z])(?:rs\.?|pkr|usd)\b|us\$|\$)\s*\.?\s*"
-    r"([\d][\d,\.]*\s*(?:million|billion|crore|lakh|thousand)?)",
+    r"((?:\d[\d,\.]*\d|\d)(?!\d)"
+    r"(?:\s*(?:million|billion|crore|lakh|lacs|thousand))?"
+    r"(?:\s*\(\s*(?:million|mn|billion|bn|crore|lacs|lac|lakh|thousand|m|b|cr|l|k)\s*\))?)"
+    r"(?!\s*%)",
     re.I,
 )
+
+# A bid security is a sum of money, and a sum in the low hundreds is not one.
+# At that size the figure is a rate, a serial number or a stamp-paper value
+# that happened to sit beside the words "bid security" — a flattened table
+# heading is the usual culprit. Below the floor the figure is not read as the
+# amount at all, so the record reports the amount as not found and asks for
+# it to be checked, rather than dividing a stray digit into a confident
+# number. A real bid security is never this small.
+MIN_BID_SECURITY = 1_000
 
 # A date candidate in any of the formats Pakistani notices use, including the
 # ordinal and Urdu forms.
@@ -195,22 +214,30 @@ def _after(text, triggers, window=120):
     return text[match.end() : match.end() + window]
 
 
-def _closest_money(text, triggers, max_distance=200):
+def _closest_money(text, triggers, max_distance=200, minimum=0):
     """The money amount sitting closest to any trigger phrase.
 
     Proximity matters: a section heading like "BID SECURITY AND TENDER FEE"
     is a trigger match too, but the amount that belongs to it is far away.
     Picking the *nearest* amount to *any* trigger resolves that, and also
     handles a document that states the same field more than once.
+
+    An amount below ``minimum`` is passed over rather than taken, and the
+    search carries on: the nearest figure is sometimes a rate or a serial
+    number that only looks like an amount, and the one that belongs to the
+    field is further along.
     """
     best = None
     for trigger in triggers:
         for anchor in re.finditer(trigger, text, re.I):
             start = anchor.end()
             for match in MONEY_TOKEN.finditer(text, start, start + max_distance):
+                amount = parse_amount(match.group(1))
+                if amount is None or amount < minimum:
+                    continue
                 distance = match.start() - start
                 if best is None or distance < best[0]:
-                    best = (distance, parse_amount(match.group(1)))
+                    best = (distance, amount)
                 break
     return best[1] if best else None
 
@@ -322,7 +349,7 @@ def _detect_fields(text: str) -> dict:
         detected["opening_at"] = parsed
 
     # --- bid security ---
-    amount = _closest_money(text, BID_SECURITY_TRIGGERS)
+    amount = _closest_money(text, BID_SECURITY_TRIGGERS, minimum=MIN_BID_SECURITY)
     if amount:
         detected["bid_security_amount"] = amount
     # The percentage is read whether or not an amount was found: a tender

@@ -654,6 +654,43 @@ def test_the_boq_estimate_reaches_the_record(client, auth):
     assert detail["boq_estimate_note"]
 
 
+def test_the_scale_a_tenders_own_table_uses_is_read_with_the_amount():
+    """A tender's tables print the scale in brackets: "RS. 3.75 (M)" is three
+    and three-quarter million, and reading it as three rupees seventy-five
+    paisa would put the implied value out by a million times."""
+    detected = extractor._detect_fields(
+        "Earnest Money @ 5% Time Limit 3. INSTALLATION OF SOLAR ENERGY SYSTEM. "
+        "RS. 3.75 (M) RS. 0.18 (M) 02 MONTHS. Bid Security 2% of the estimated cost."
+    )
+    assert detected["bid_security_amount"] == 3_750_000
+
+
+def test_a_rate_in_a_column_heading_is_not_read_as_an_amount():
+    """A tender's own table prints its headings as "Estimated Cost in PKR 02%
+    Bid Security/Earnest Money in PKR 01". Those are a rate and a serial
+    number, not amounts, and a tender whose real figures sit further down the
+    row must not be given the heading's figures."""
+    detected = extractor._detect_fields(
+        "Sr. No. Category Estimated Cost in PKR 02% Bid Security/Earnest Money in PKR 01 "
+        "LOT-1:- Procurement of Misc. Items 5,913,319 118,267 02 "
+        "Bid Security 2% of the estimated cost shall be furnished."
+    )
+    assert "bid_security_amount" not in detected
+    assert "estimated_boq_value" not in detected
+
+
+def test_a_figure_too_small_to_be_a_bid_security_is_not_read_as_one():
+    """A security of a few rupees is not a security. Reading one would divide
+    a stray digit into a confident number, so the amount is left unread and
+    the record asks for it to be checked."""
+    detected = extractor._detect_fields(
+        "Bid Security in PKR 01. Bid Security 2% of the estimated cost shall be furnished."
+    )
+    assert "bid_security_amount" not in detected
+    assert "estimated_boq_value" not in detected
+    assert "no bid security amount was found" in detected["boq_estimate_note"]
+
+
 # ----------------------------------------------------------------------
 # 2.9  The submission checklist
 # ----------------------------------------------------------------------

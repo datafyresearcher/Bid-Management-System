@@ -77,6 +77,31 @@ SCALE_WORDS = {
     "billion": 1_000_000_000,
 }
 
+# The scale written in brackets after the figure, the way a tender's own
+# tables print it: "RS. 3.75 (M)" is three and three-quarter million, not
+# three rupees seventy-five paisa.
+BRACKET_SCALE = {
+    "k": 1_000,
+    "thousand": 1_000,
+    "thousands": 1_000,
+    "l": 100_000,
+    "lac": 100_000,
+    "lacs": 100_000,
+    "lakh": 100_000,
+    "lakhs": 100_000,
+    "m": 1_000_000,
+    "mn": 1_000_000,
+    "million": 1_000_000,
+    "millions": 1_000_000,
+    "b": 1_000_000_000,
+    "bn": 1_000_000_000,
+    "billion": 1_000_000_000,
+    "billions": 1_000_000_000,
+    "cr": 10_000_000,
+    "crore": 10_000_000,
+    "crores": 10_000_000,
+}
+
 
 def utcnow() -> datetime:
     """Naive UTC timestamp, used for every stored datetime column.
@@ -169,7 +194,8 @@ def parse_amount(value):
     """Parse a monetary amount, tolerating Pakistani notation.
 
     Handles ``5,000,000``, ``Rs. 5,000,000/-``, ``PKR 25,000`` and
-    ``2.5 million`` / ``5 billion`` style scale words.
+    ``2.5 million`` / ``5 billion`` style scale words, and the bracketed
+    scale a tender's own tables use: ``RS. 3.75 (M)`` is 3,750,000.
     """
     if value is None:
         return None
@@ -178,6 +204,16 @@ def parse_amount(value):
     text = str(value)
     if not text.strip():
         return None
+
+    # "3.75 (M)" — the scale sits in brackets after the figure. Read it
+    # first, because "3.75" on its own is not the amount the document means.
+    multiplier = 1.0
+    bracketed = re.search(r"\(\s*([A-Za-z]{1,8})\s*\)", text)
+    if bracketed:
+        marker = bracketed.group(1).lower()
+        if marker in BRACKET_SCALE:
+            multiplier = BRACKET_SCALE[marker]
+            text = text[: bracketed.start()]
 
     m = re.search(r"([\d][\d,\.]*)\s*([a-z]+)?", text, flags=re.I)
     if not m:
@@ -192,7 +228,7 @@ def parse_amount(value):
         return None
     if trailing:
         amount *= SCALE_WORDS[trailing]
-    return amount
+    return amount * multiplier
 
 
 def parse_money(text: str):
