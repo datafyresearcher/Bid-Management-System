@@ -148,6 +148,14 @@ def _approved(db, model, row_id, approved):
     return {"id": row_id, "approved": approved}
 
 
+def _get_row(db, model, row_id):
+    """One knowledge-base record, or the 404 the reader deserves."""
+    row = db.get(model, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return row
+
+
 @router.get("/summary")
 def kb_summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     def counts(model):
@@ -236,6 +244,30 @@ def approve_license(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_
     return _approved(db, License, row_id, payload.approved)
 
 
+@router.put("/licenses/{row_id}")
+def update_license(row_id: int, payload: LicenseIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a licence. Only the fields the form manages are written —
+    the issue and expiry dates a record may already carry are left alone,
+    and so is its approval."""
+    row = _get_row(db, License, row_id)
+    row.number = payload.number
+    row.category = payload.category
+    row.fields = payload.fields
+    db.commit()
+    audit.record(db, "kb.license_updated", actor=user.name, detail={"id": row_id, "number": payload.number})
+    return {"id": row_id}
+
+
+@router.delete("/licenses/{row_id}")
+def delete_license(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, License, row_id)
+    detail, row_id_done = {"number": row.number}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.license_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
+
+
 @router.get("/financial-years")
 def list_fys(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(select(FinancialYear)).scalars().all()
@@ -266,6 +298,31 @@ def add_fy(payload: FYIn, user: User = Depends(WRITE_ROLES), db: Session = Depen
 @router.post("/financial-years/{row_id}/approve")
 def approve_fy(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
     return _approved(db, FinancialYear, row_id, payload.approved)
+
+
+@router.put("/financial-years/{row_id}")
+def update_fy(row_id: int, payload: FYIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a financial year. Bonding capacity, where a record carries
+    one, is not part of the form and is left untouched."""
+    row = _get_row(db, FinancialYear, row_id)
+    row.fiscal_year = payload.fiscal_year
+    row.turnover = payload.turnover
+    row.net_worth = payload.net_worth
+    row.profit = payload.profit
+    row.auditor = payload.auditor
+    db.commit()
+    audit.record(db, "kb.fy_updated", actor=user.name, detail={"id": row_id, "fiscal_year": payload.fiscal_year})
+    return {"id": row_id}
+
+
+@router.delete("/financial-years/{row_id}")
+def delete_fy(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, FinancialYear, row_id)
+    detail, row_id_done = {"fiscal_year": row.fiscal_year}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.fy_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
 
 
 @router.get("/projects")
@@ -303,6 +360,33 @@ def approve_project(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_
     return _approved(db, ProjectExperience, row_id, payload.approved)
 
 
+@router.put("/projects/{row_id}")
+def update_project(row_id: int, payload: ProjectIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a project record. The role it was performed in and its
+    funding source are not part of the form and are left untouched."""
+    row = _get_row(db, ProjectExperience, row_id)
+    row.contract_no = payload.contract_no
+    row.client = payload.client
+    row.category = payload.category
+    row.value = payload.value
+    row.area = payload.area
+    row.start_date = payload.start_date
+    row.end_date = payload.end_date
+    db.commit()
+    audit.record(db, "kb.project_updated", actor=user.name, detail={"id": row_id, "contract_no": payload.contract_no})
+    return {"id": row_id}
+
+
+@router.delete("/projects/{row_id}")
+def delete_project(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, ProjectExperience, row_id)
+    detail, row_id_done = {"contract_no": row.contract_no}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.project_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
+
+
 @router.get("/personnel")
 def list_personnel(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(select(Personnel)).scalars().all()
@@ -332,6 +416,31 @@ def add_personnel(payload: PersonnelIn, user: User = Depends(WRITE_ROLES), db: S
 @router.post("/personnel/{row_id}/approve")
 def approve_personnel(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
     return _approved(db, Personnel, row_id, payload.approved)
+
+
+@router.put("/personnel/{row_id}")
+def update_personnel(row_id: int, payload: PersonnelIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a person's record. Everything the form holds is written;
+    certifications and key projects a record may carry are left alone."""
+    row = _get_row(db, Personnel, row_id)
+    row.name = payload.name
+    row.position = payload.position
+    row.pec_reg_no = payload.pec_reg_no
+    row.years_experience = payload.years_experience
+    row.availability = payload.availability
+    db.commit()
+    audit.record(db, "kb.personnel_updated", actor=user.name, detail={"id": row_id, "name": payload.name})
+    return {"id": row_id}
+
+
+@router.delete("/personnel/{row_id}")
+def delete_personnel(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, Personnel, row_id)
+    detail, row_id_done = {"name": row.name}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.personnel_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
 
 
 @router.get("/equipment")
@@ -366,6 +475,31 @@ def approve_equipment(row_id: int, payload: ApproveIn, user: User = Depends(WRIT
     return _approved(db, EquipmentItem, row_id, payload.approved)
 
 
+@router.put("/equipment/{row_id}")
+def update_equipment(row_id: int, payload: EquipmentIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a piece of equipment. Everything the form holds is written;
+    a spec, year or location a record may carry is left alone."""
+    row = _get_row(db, EquipmentItem, row_id)
+    row.name = payload.name
+    row.category = payload.category
+    row.quantity = payload.quantity
+    row.ownership = payload.ownership
+    row.condition = payload.condition
+    db.commit()
+    audit.record(db, "kb.equipment_updated", actor=user.name, detail={"id": row_id, "name": payload.name})
+    return {"id": row_id}
+
+
+@router.delete("/equipment/{row_id}")
+def delete_equipment(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, EquipmentItem, row_id)
+    detail, row_id_done = {"name": row.name}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.equipment_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
+
+
 @router.get("/certificates")
 def list_certificates(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(select(CompanyCertificate)).scalars().all()
@@ -396,10 +530,36 @@ def approve_certificate(row_id: int, payload: ApproveIn, user: User = Depends(WR
     return _approved(db, CompanyCertificate, row_id, payload.approved)
 
 
+@router.put("/certificates/{row_id}")
+def update_certificate(row_id: int, payload: CertificateIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a certificate. Only the fields the form manages are written;
+    a valid-from date a record may already carry is left alone."""
+    row = _get_row(db, CompanyCertificate, row_id)
+    row.name = payload.name
+    row.issuer = payload.issuer
+    row.number = payload.number
+    row.expires_at = parse_date(payload.expires_at)
+    db.commit()
+    audit.record(db, "kb.certificate_updated", actor=user.name, detail={"id": row_id, "name": payload.name})
+    return {"id": row_id}
+
+
+@router.delete("/certificates/{row_id}")
+def delete_certificate(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    row = _get_row(db, CompanyCertificate, row_id)
+    detail, row_id_done = {"name": row.name}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.certificate_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
+
+
 @router.get("/library")
 def list_library(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(select(LibraryDocument)).scalars().all()
-    return [shared_documents.document(r) for r in rows]
+    # The text comes with the rows so a record can be corrected without
+    # losing the words it already holds.
+    return [{**shared_documents.document(r), "content_text": r.content_text or ""} for r in rows]
 
 
 @router.post("/library")
@@ -414,6 +574,34 @@ def add_library(payload: LibraryIn, user: User = Depends(WRITE_ROLES), db: Sessi
 @router.post("/library/{row_id}/approve")
 def approve_library(row_id: int, payload: ApproveIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
     return _approved(db, LibraryDocument, row_id, payload.approved)
+
+
+@router.put("/library/{row_id}")
+def update_library(row_id: int, payload: LibraryIn, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Correct a reference document. Only the fields the library tab
+    manages are written — a document that is also a shared document keeps
+    its shared, locked, category and valid-until settings, which belong to
+    the shared-documents tab."""
+    row = _get_row(db, LibraryDocument, row_id)
+    row.title = payload.title
+    row.type = payload.type
+    row.tags = payload.tags
+    row.content_text = payload.content_text
+    db.commit()
+    audit.record(db, "kb.library_updated", actor=user.name, detail={"id": row_id, "title": payload.title})
+    return {"id": row_id}
+
+
+@router.delete("/library/{row_id}")
+def delete_library(row_id: int, user: User = Depends(WRITE_ROLES), db: Session = Depends(get_db)):
+    """Remove a document from the knowledge base. This is the knowledge
+    base itself — the one place a locked shared document may be deleted."""
+    row = _get_row(db, LibraryDocument, row_id)
+    detail, row_id_done = {"title": row.title}, row.id
+    db.delete(row)
+    db.commit()
+    audit.record(db, "kb.library_deleted", actor=user.name, detail={"id": row_id_done, **detail})
+    return {"deleted": row_id_done}
 
 
 # ----------------------------------------------------------------------

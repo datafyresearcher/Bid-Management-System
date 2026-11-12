@@ -111,6 +111,39 @@ function useCrud(path, loadSummary, setInfo, setError, setBusy) {
     }
   };
 
+  const update = async (id, payload, message) => {
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      await api(`${path}/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+      setInfo(message || "Changes saved");
+      load();
+      if (loadSummary) loadSummary();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id, label) => {
+    if (!window.confirm(`Remove “${label}” from the knowledge base? This cannot be undone.`)) return;
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      await api(`${path}/${id}`, { method: "DELETE" });
+      setInfo("Removed from the knowledge base");
+      load();
+      if (loadSummary) loadSummary();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const approve = async (id, approved) => {
     setBusy(true);
     try {
@@ -124,7 +157,7 @@ function useCrud(path, loadSummary, setInfo, setError, setBusy) {
     }
   };
 
-  return { rows, load, create, approve };
+  return { rows, load, create, update, remove, approve };
 }
 
 function CompanyTab({ setInfo, setError, setBusy, busy }) {
@@ -186,12 +219,34 @@ function CompanyTab({ setInfo, setError, setBusy, busy }) {
 }
 
 function LicensesTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/licenses", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/licenses", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ number: "", category: "C-A", fields: "" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({ number: row.number || "", category: row.category || "C-A", fields: (row.fields || []).join(", ") });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ number: "", category: "C-A", fields: "" });
+  };
+  const save = () => {
+    const payload = { ...form, fields: form.fields.split(",").map((s) => s.trim()).filter(Boolean) };
+    if (editingId) {
+      update(editingId, payload, "Licence updated");
+      cancelEdit();
+    } else {
+      create(payload, "Licence added");
+      cancelEdit();
+    }
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add licence</h3>
+        <h3>
+          {editingId ? `Edit licence #${editingId}` : "Add licence"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div><label>Number</label><input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} /></div>
           <div>
@@ -201,21 +256,62 @@ function LicensesTab(props) {
             </select>
           </div>
           <div className="wide"><label>Fields (comma separated)</label><input value={form.fields} onChange={(e) => setForm({ ...form, fields: e.target.value })} /></div>
-          <button className="btn primary" disabled={props.busy || !form.number} onClick={() => create({ ...form, fields: form.fields.split(",").map((s) => s.trim()).filter(Boolean) }, "Licence added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.number} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["number", "category", "fields"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["number", "category", "fields"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.number || "this licence")}
+      />
     </>
   );
 }
 
 function FinancialsTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/financial-years", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/financial-years", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ fiscal_year: "", turnover: "", net_worth: "", profit: "", auditor: "" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      fiscal_year: row.fiscal_year || "",
+      turnover: String(row.turnover ?? ""),
+      net_worth: String(row.net_worth ?? ""),
+      profit: String(row.profit ?? ""),
+      auditor: row.auditor || "",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ fiscal_year: "", turnover: "", net_worth: "", profit: "", auditor: "" });
+  };
+  const save = () => {
+    const payload = {
+      ...form,
+      turnover: Number(form.turnover || 0),
+      net_worth: Number(form.net_worth || 0),
+      profit: Number(form.profit || 0),
+    };
+    if (editingId) {
+      update(editingId, payload, "Financial year updated");
+    } else {
+      create(payload, "Financial year added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add financial year</h3>
+        <h3>
+          {editingId ? `Edit financial year #${editingId}` : "Add financial year"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div><label>Fiscal year</label><input value={form.fiscal_year} onChange={(e) => setForm({ ...form, fiscal_year: e.target.value })} placeholder="2025-26" /></div>
           <div><label>Turnover (PKR)</label><input value={form.turnover} onChange={(e) => setForm({ ...form, turnover: e.target.value })} /></div>
@@ -225,29 +321,61 @@ function FinancialsTab(props) {
           <button
             className="btn primary"
             disabled={props.busy || !form.fiscal_year}
-            onClick={() => create({
-              ...form,
-              turnover: Number(form.turnover || 0),
-              net_worth: Number(form.net_worth || 0),
-              profit: Number(form.profit || 0),
-            }, "Financial year added")}
+            onClick={save}
           >
-            Add
+            {editingId ? "Save changes" : "Add"}
           </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["fiscal_year", "turnover", "net_worth", "auditor"]} moneyCols={["turnover", "net_worth"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["fiscal_year", "turnover", "net_worth", "auditor"]}
+        moneyCols={["turnover", "net_worth"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.fiscal_year || "this financial year")}
+      />
     </>
   );
 }
 
 function ProjectsTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/projects", props.loadSummary, props.setInfo, props.setError, props.setBusy);
-  const [form, setForm] = useState({ contract_no: "", client: "", category: "Substations", value: "", area: "Punjab", start_date: "", end_date: "", role: "Sole", funding_source: "" });
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/projects", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const [form, setForm] = useState({ contract_no: "", client: "", category: "Substations", value: "", area: "Punjab", start_date: "", end_date: "" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      contract_no: row.contract_no || "",
+      client: row.client || "",
+      category: row.category || "Substations",
+      value: String(row.value ?? ""),
+      area: row.area || "",
+      start_date: row.start_date || "",
+      end_date: row.end_date || "",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ contract_no: "", client: "", category: "Substations", value: "", area: "Punjab", start_date: "", end_date: "" });
+  };
+  const save = () => {
+    const payload = { ...form, value: Number(form.value || 0) };
+    if (editingId) {
+      update(editingId, payload, "Project updated");
+    } else {
+      create(payload, "Project added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add project experience</h3>
+        <h3>
+          {editingId ? `Edit project #${editingId}` : "Add project experience"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div><label>Contract no</label><input value={form.contract_no} onChange={(e) => setForm({ ...form, contract_no: e.target.value })} /></div>
           <div className="wide"><label>Client</label><input value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} /></div>
@@ -261,41 +389,114 @@ function ProjectsTab(props) {
           <div><label>Area</label><input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} /></div>
           <div><label>Start</label><input value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} placeholder="2022" /></div>
           <div><label>End</label><input value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} placeholder="2025" /></div>
-          <button className="btn primary" disabled={props.busy || !form.contract_no} onClick={() => create({ ...form, value: Number(form.value || 0) }, "Project added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.contract_no} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["contract_no", "client", "category", "value", "role"]} moneyCols={["value"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["contract_no", "client", "category", "value", "role"]}
+        moneyCols={["value"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.contract_no || "this project")}
+      />
     </>
   );
 }
 
 function PersonnelTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/personnel", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/personnel", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ name: "", position: "", pec_reg_no: "", years_experience: "", availability: "Available" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      name: row.name || "",
+      position: row.position || "",
+      pec_reg_no: row.pec_reg_no || "",
+      years_experience: String(row.years_experience ?? ""),
+      availability: row.availability || "Available",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ name: "", position: "", pec_reg_no: "", years_experience: "", availability: "Available" });
+  };
+  const save = () => {
+    const payload = { ...form, years_experience: Number(form.years_experience || 0) };
+    if (editingId) {
+      update(editingId, payload, "Person updated");
+    } else {
+      create(payload, "Personnel added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add personnel</h3>
+        <h3>
+          {editingId ? `Edit personnel #${editingId}` : "Add personnel"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div className="wide"><label>Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div><label>Position</label><input value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} /></div>
           <div><label>PEC reg no</label><input value={form.pec_reg_no} onChange={(e) => setForm({ ...form, pec_reg_no: e.target.value })} /></div>
           <div><label>Experience (yrs)</label><input value={form.years_experience} onChange={(e) => setForm({ ...form, years_experience: e.target.value })} /></div>
-          <button className="btn primary" disabled={props.busy || !form.name} onClick={() => create({ ...form, years_experience: Number(form.years_experience || 0) }, "Personnel added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.name} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["name", "position", "pec_reg_no", "years_experience", "availability"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["name", "position", "pec_reg_no", "years_experience", "availability"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.name || "this person")}
+      />
     </>
   );
 }
 
 function EquipmentTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/equipment", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/equipment", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ name: "", category: "", quantity: "1", ownership: "Owned", condition: "Good" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      name: row.name || "",
+      category: row.category || "",
+      quantity: String(row.quantity ?? "1"),
+      ownership: row.ownership || "Owned",
+      condition: row.condition || "Good",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ name: "", category: "", quantity: "1", ownership: "Owned", condition: "Good" });
+  };
+  const save = () => {
+    const payload = { ...form, quantity: Number(form.quantity || 1) };
+    if (editingId) {
+      update(editingId, payload, "Equipment updated");
+    } else {
+      create(payload, "Equipment added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add equipment</h3>
+        <h3>
+          {editingId ? `Edit equipment #${editingId}` : "Add equipment"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div className="wide"><label>Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div><label>Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></div>
@@ -306,41 +507,109 @@ function EquipmentTab(props) {
               <option>Owned</option><option>Leased</option><option>Rented</option>
             </select>
           </div>
-          <button className="btn primary" disabled={props.busy || !form.name} onClick={() => create({ ...form, quantity: Number(form.quantity || 1) }, "Equipment added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.name} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["name", "category", "quantity", "ownership", "condition"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["name", "category", "quantity", "ownership", "condition"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.name || "this equipment")}
+      />
     </>
   );
 }
 
 function CertificatesTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/certificates", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/certificates", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ name: "", issuer: "", number: "", expires_at: "" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      name: row.name || "",
+      issuer: row.issuer || "",
+      number: row.number || "",
+      expires_at: row.expires_at || "",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ name: "", issuer: "", number: "", expires_at: "" });
+  };
+  const save = () => {
+    if (editingId) {
+      update(editingId, form, "Certificate updated");
+    } else {
+      create(form, "Certificate added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add certificate</h3>
+        <h3>
+          {editingId ? `Edit certificate #${editingId}` : "Add certificate"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <div className="inline-form">
           <div className="wide"><label>Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div><label>Issuer</label><input value={form.issuer} onChange={(e) => setForm({ ...form, issuer: e.target.value })} /></div>
           <div><label>Number</label><input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} /></div>
           <div><label>Expires</label><input value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} placeholder="2027-12-31" /></div>
-          <button className="btn primary" disabled={props.busy || !form.name} onClick={() => create(form, "Certificate added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.name} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
       </div>
-      <Table rows={rows} approve={approve} cols={["name", "issuer", "number", "expires_at"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["name", "issuer", "number", "expires_at"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.name || "this certificate")}
+      />
     </>
   );
 }
 
 function LibraryTab(props) {
-  const { rows, create, approve } = useCrud("/api/kb/library", props.loadSummary, props.setInfo, props.setError, props.setBusy);
+  const { rows, create, update, remove, approve } = useCrud("/api/kb/library", props.loadSummary, props.setInfo, props.setError, props.setBusy);
   const [form, setForm] = useState({ title: "", type: "policy", tags: "", content_text: "" });
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      title: row.title || "",
+      type: row.type || "policy",
+      tags: row.tags || "",
+      content_text: row.content_text || "",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ title: "", type: "policy", tags: "", content_text: "" });
+  };
+  const save = () => {
+    if (editingId) {
+      update(editingId, form, "Reference document updated");
+    } else {
+      create(form, "Library document added");
+    }
+    cancelEdit();
+  };
   return (
     <>
       <div className="card mb-14">
-        <h3>Add a reference document</h3>
+        <h3>
+          {editingId ? `Edit reference document #${editingId}` : "Add a reference document"}{" "}
+          {editingId ? <button className="btn small" onClick={cancelEdit}>Cancel</button> : null}
+        </h3>
         <p className="muted">
           Reference material the system reads when it drafts — policies, procedures, manuals. This
           is not where the evidence every proposal carries goes; that belongs under Shared documents.
@@ -349,12 +618,21 @@ function LibraryTab(props) {
           <div className="wide"><label>Title</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div><label>Type</label><input value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} /></div>
           <div className="wide"><label>Tags</label><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></div>
-          <button className="btn primary" disabled={props.busy || !form.title} onClick={() => create(form, "Library document added")}>Add</button>
+          <button className="btn primary" disabled={props.busy || !form.title} onClick={save}>
+            {editingId ? "Save changes" : "Add"}
+          </button>
         </div>
         <label>Content</label>
         <textarea value={form.content_text} onChange={(e) => setForm({ ...form, content_text: e.target.value })} />
       </div>
-      <Table rows={rows} approve={approve} cols={["title", "type", "tags"]} busy={props.busy} />
+      <Table
+        rows={rows}
+        approve={approve}
+        cols={["title", "type", "tags"]}
+        busy={props.busy}
+        onEdit={startEdit}
+        onDelete={(row) => remove(row.id, row.title || "this reference document")}
+      />
     </>
   );
 }
@@ -554,7 +832,7 @@ function SharedDocumentsTab(props) {
   );
 }
 
-function Table({ rows, approve, cols, moneyCols = [], busy }) {
+function Table({ rows, approve, cols, moneyCols = [], busy, onEdit, onDelete }) {
   return (
     <div className="table-wrap">
       <table>
@@ -562,6 +840,7 @@ function Table({ rows, approve, cols, moneyCols = [], busy }) {
           <tr>
             {cols.map((c) => <th key={c}>{c.replace(/_/g, " ")}</th>)}
             <th>Approved</th>
+            {onEdit || onDelete ? <th></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -577,9 +856,25 @@ function Table({ rows, approve, cols, moneyCols = [], busy }) {
                   {row.approved ? "approved" : "pending"}
                 </button>
               </td>
+              {onEdit || onDelete ? (
+                <td data-label="">
+                  <div className="row-actions">
+                    {onEdit ? (
+                      <button className="btn small" disabled={busy} onClick={() => onEdit(row)}>
+                        Edit
+                      </button>
+                    ) : null}
+                    {onDelete ? (
+                      <button className="btn small danger" disabled={busy} onClick={() => onDelete(row)}>
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              ) : null}
             </tr>
           ))}
-          {rows.length === 0 ? <tr><td colSpan={cols.length + 1} data-label="" className="muted">No records.</td></tr> : null}
+          {rows.length === 0 ? <tr><td colSpan={cols.length + (onEdit || onDelete ? 2 : 1)} data-label="" className="muted">No records.</td></tr> : null}
         </tbody>
       </table>
     </div>

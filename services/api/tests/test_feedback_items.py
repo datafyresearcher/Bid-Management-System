@@ -1537,8 +1537,117 @@ def test_the_notifications_already_on_file_are_reworded(client):
 
 
 # ----------------------------------------------------------------------
-# Helpers
+# 2.7  Correcting and removing knowledge-base records
 # ----------------------------------------------------------------------
+
+
+def test_a_licence_can_be_corrected_and_removed(client, auth):
+    """The bid team can fix a wrong number and take a record away.
+
+    A knowledge base nobody can correct stops being trusted: a typo in a
+    licence number would sit there for ever. Every collection can now be
+    edited and removed from the tab it lives in, and what was changed and
+    who changed it goes to the audit trail.
+    """
+    made = client.post(
+        "/api/kb/licenses",
+        json={"number": "C-A-111", "category": "C-A", "fields": ["Electrical"]},
+        headers=auth,
+    )
+    assert made.status_code == 200, made.text
+    row_id = made.json()["id"]
+
+    fixed = client.put(
+        f"/api/kb/licenses/{row_id}",
+        json={"number": "C-A-98765", "category": "No Limit", "fields": ["Electrical", "Grid Stations"]},
+        headers=auth,
+    )
+    assert fixed.status_code == 200, fixed.text
+
+    rows = client.get("/api/kb/licenses", headers=auth).json()
+    mine = [r for r in rows if r["id"] == row_id]
+    assert mine[0]["number"] == "C-A-98765"
+    assert mine[0]["category"] == "No Limit"
+    assert mine[0]["fields"] == ["Electrical", "Grid Stations"]
+
+    gone = client.delete(f"/api/kb/licenses/{row_id}", headers=auth)
+    assert gone.status_code == 200
+    rows = client.get("/api/kb/licenses", headers=auth).json()
+    assert not [r for r in rows if r["id"] == row_id]
+
+    missing = client.put(
+        f"/api/kb/licenses/{row_id}",
+        json={"number": "X", "category": "C-A", "fields": []},
+        headers=auth,
+    )
+    assert missing.status_code == 404
+
+
+def test_an_edit_does_not_wipe_what_the_form_does_not_manage(client, auth):
+    """Correcting a record keeps the fields the form does not show.
+
+    A licence's issue and expiry dates are not on the form; an edit that
+    posted the form would quietly erase them. The update writes only what
+    the form manages and leaves the rest of the record standing.
+    """
+    made = client.post(
+        "/api/kb/licenses",
+        json={"number": "C-A-KEEP", "category": "C-A", "fields": ["Electrical"], "issued_at": "2024-06-01", "expires_at": "2027-06-01"},
+        headers=auth,
+    )
+    assert made.status_code == 200, made.text
+    row_id = made.json()["id"]
+
+    fixed = client.put(
+        f"/api/kb/licenses/{row_id}",
+        json={"number": "C-A-KEEP-2", "category": "C-A", "fields": ["Electrical"]},
+        headers=auth,
+    )
+    assert fixed.status_code == 200
+
+    db = _session()
+    try:
+        from app.models import License
+
+        row = db.get(License, row_id)
+        assert row.number == "C-A-KEEP-2"
+        assert row.issued_at is not None, "the issue date was wiped by the edit"
+        assert row.expires_at is not None, "the expiry date was wiped by the edit"
+        assert row.approved is True, "the edit changed the approval the approve button owns"
+    finally:
+        db.close()
+
+
+def test_a_shared_document_keeps_its_lock_when_corrected_from_the_library(client, auth):
+    """Editing a shared document's words does not unlock it.
+
+    The library tab lists every knowledge-base document, shared ones
+    included. An edit there writes the title, type, tags and words — and
+    must not touch the shared, locked and category settings that belong to
+    the shared-documents tab, or a master copy would quietly stop
+    travelling with every proposal.
+    """
+    made = client.post(
+        "/api/kb/shared",
+        json={"title": "PEC certificate", "category": "PEC certificate", "locked": True},
+        headers=auth,
+    )
+    assert made.status_code == 200, made.text
+    row_id = made.json()["id"]
+
+    fixed = client.put(
+        f"/api/kb/library/{row_id}",
+        json={"title": "PEC certificate (renewed)", "type": "evidence", "tags": "", "content_text": ""},
+        headers=auth,
+    )
+    assert fixed.status_code == 200, fixed.text
+
+    docs = client.get("/api/kb/shared", headers=auth).json()["documents"]
+    mine = [d for d in docs if d["id"] == row_id]
+    assert mine[0]["title"] == "PEC certificate (renewed)"
+    assert mine[0]["locked"] is True, "the edit unlocked a locked master copy"
+    assert mine[0]["shared"] is True
+    assert mine[0]["category"] == "PEC certificate"
 
 
 def _session():
