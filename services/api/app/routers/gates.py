@@ -8,6 +8,7 @@ from app.models import GateTask, User
 from app.security import get_current_user
 from app.serializers import gate_task
 from app.services import audit, workflow
+from app.services.wording import gate_status_label
 
 router = APIRouter(prefix="/api/gates", tags=["gates"])
 
@@ -82,7 +83,7 @@ def count_gates(
 def get_gate(gate_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.get(GateTask, gate_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Gate task not found")
+        raise HTTPException(status_code=404, detail="Stage not found")
     return gate_task(task)
 
 
@@ -90,12 +91,15 @@ def get_gate(gate_id: int, user: User = Depends(get_current_user), db: Session =
 def decide(gate_id: int, payload: DecideIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.get(GateTask, gate_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Gate task not found")
+        raise HTTPException(status_code=404, detail="Stage not found")
     if task.status not in ("PENDING", "OVERDUE"):
-        raise HTTPException(status_code=400, detail=f"Gate already {task.status}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"This stage is already decided — it is marked “{gate_status_label(task.status)}”.",
+        )
     allowed = {task.owner_role, "admin", "management"}
     if user.role not in allowed:
-        raise HTTPException(status_code=403, detail=f"Gate owned by role {task.owner_role}")
+        raise HTTPException(status_code=403, detail=f"This stage belongs to the {task.owner_role} role")
     try:
         workflow.decide_gate(db, task, payload.decision, actor=user, comment=payload.comment, reason_code=payload.reason_code)
     except Exception as exc:
@@ -115,7 +119,7 @@ def decide(gate_id: int, payload: DecideIn, user: User = Depends(get_current_use
         raise HTTPException(
             status_code=400,
             detail=(
-                "The tender's documents could not be analysed, so the gate has been reopened "
+                "The tender's documents could not be analysed, so the stage has been reopened "
                 "and the tender can be looked at again. The reason is in the audit trail."
             ),
         )

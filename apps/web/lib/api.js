@@ -254,6 +254,70 @@ export function stateLabel(state) {
 }
 
 /**
+ * What a stage's own status means to the reader.
+ *
+ * A stage carries a status of its own — waiting, overdue, approved — and
+ * that status is the machinery's word for it, not the bid team's. These are
+ * the words the bid team reads instead.
+ */
+export const GATE_STATUS_LABELS = {
+  PENDING: "Waiting for a decision",
+  OVERDUE: "Overdue — past its review time",
+  APPROVED: "Approved",
+  REJECTED: "Returned",
+  CANCELLED: "Cancelled",
+};
+
+/** The reader-facing name of a stage status. */
+export function gateStatusLabel(status) {
+  if (!status) return "—";
+  return GATE_STATUS_LABELS[status] || status;
+}
+
+/** What a proposal's status means to the reader. */
+export const PROPOSAL_STATUS_LABELS = {
+  DRAFT: "Draft",
+};
+
+/** What a proposal section's status means to the reader. */
+export const SECTION_STATUS_LABELS = {
+  DRAFTED: "Drafted",
+  GAPS: "Needs information",
+  EDITED: "Edited by us",
+};
+
+export function sectionStatusLabel(status) {
+  if (!status) return "—";
+  return SECTION_STATUS_LABELS[status] || status;
+}
+
+/** What the submission pack's status means to the reader. */
+export const SUBMISSION_STATUS_LABELS = {
+  DRAFT: "Being prepared",
+  PACK_BUILT: "Pack built",
+  READY: "Ready to submit",
+  SUBMITTED: "Submitted",
+  BLOCKED: "Blocked",
+};
+
+export function submissionStatusLabel(status) {
+  if (!status) return "—";
+  return SUBMISSION_STATUS_LABELS[status] || status;
+}
+
+/** What the compliance matrix's status means to the reader. */
+export const COMPLIANCE_STATUS_LABELS = {
+  TBD: "To be confirmed",
+  COVERED: "Covered",
+  MISSING: "Missing",
+};
+
+export function complianceStatusLabel(status) {
+  if (!status) return "—";
+  return COMPLIANCE_STATUS_LABELS[status] || status;
+}
+
+/**
  * The three states a submission checklist item can be in.
  */
 export const CHECKLIST_STATUSES = [
@@ -315,6 +379,15 @@ export const DECISIONS = {
     ["BLOCKED", "Blocked — not submitted"],
   ],
 };
+
+/** The reader-facing name of the decision that was made at a stage. */
+export function decisionLabel(gate, decision) {
+  if (!decision) return "";
+  const options = DECISIONS[gate] || [];
+  const found = options.find(([value]) => value === decision);
+  if (found) return found[1];
+  return decision.replace(/_/g, " ").toLowerCase();
+}
 
 export function stateClass(state) {
   if (!state) return "badge";

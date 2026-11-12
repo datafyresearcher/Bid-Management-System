@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, fmtDateTime, STAGE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, decisionLabel, fmtDateTime, gateStatusLabel, STAGE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
 import BrandLoader from "../../components/Loading";
 
 const PAGE_SIZE = 50;
@@ -76,7 +76,7 @@ export default function ReviewPage() {
         method: "POST",
         body: JSON.stringify({ decision, comment: comments[gate.id] || "" }),
       });
-      setInfo(`Stage ${gate.gate}: ${decision} recorded`);
+      setInfo(`Stage ${gate.gate}: ${decisionLabel(gate.gate, decision)} recorded`);
       load();
     } catch (e) {
       setError(e.message);
@@ -156,7 +156,7 @@ export default function ReviewPage() {
               <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge badge-amber"}>{STAGE_LABELS[g.gate] || `Stage ${g.gate}`}</span>{" "}
               {g.title}
             </h3>
-            <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge"}>{g.status}</span>
+            <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge"}>{gateStatusLabel(g.status)}</span>
           </div>
           <p className="muted">
             Owner: {g.owner_role} · Review SLA {g.sla_hours}h{" "}
@@ -200,7 +200,7 @@ export default function ReviewPage() {
             </>
           ) : (
             <p className="muted">
-              {g.decision ? `Decision: ${g.decision}` : ""} {g.decided_at ? `· ${fmtDateTime(g.decided_at)}` : ""} {g.comment ? `· “${g.comment}”` : ""}
+              {g.decision ? `Decision: ${decisionLabel(g.gate, g.decision)}` : ""} {g.decided_at ? `· ${fmtDateTime(g.decided_at)}` : ""} {g.comment ? `· “${g.comment}”` : ""}
             </p>
           )}
         </div>

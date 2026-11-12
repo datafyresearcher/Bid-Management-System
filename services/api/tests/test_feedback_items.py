@@ -1101,8 +1101,21 @@ def test_no_screen_prints_the_internal_workflow_state():
 
     web = Path(__file__).resolve().parents[3] / "apps" / "web"
     assert web.is_dir(), f"the web app is not where this test expects it: {web}"
-    # A state printed on its own: {o.state}, {opp.state}, {res.state}.
-    raw = re.compile(r"\{[A-Za-z_$][\w$]*(?:\.[\w$]+)*\.state\}")
+    # A state printed on its own: {o.state}, {opp.state}, {res.state}. The
+    # same for a stage's status and the decision made at it — the raw words
+    # of the workflow, not the bid team's.
+    raw = re.compile(r"\{[A-Za-z_$][\w$]*(?:\.[\w$]+)*\.(?:state|status|decision)\}")
+
+    def is_a_form_binding(line: str, start: int) -> bool:
+        """Whether this {expression} is a form control's value, not a label.
+
+        `value={l.status}` binds a <select> — the reader sees the option
+        text, not the expression — while `{l.status}` as element text is
+        printed as it is. The brace of a binding is reached from its
+        attribute through an `=`.
+        """
+        before = line[:start].rstrip()
+        return before.endswith("=")
 
     offenders = []
     scanned = 0
@@ -1111,8 +1124,10 @@ def test_no_screen_prints_the_internal_workflow_state():
             continue
         scanned += 1
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if raw.search(line):
-                offenders.append(f"{path.relative_to(web)}:{number}")
+            for match in raw.finditer(line):
+                if is_a_form_binding(line, match.start()):
+                    continue
+                offenders.append(f"{path.relative_to(web)}:{number}: {match.group(0)}")
 
     assert scanned > 0, "no web sources were scanned, so the check proved nothing"
     assert not offenders, "raw workflow state printed on screen: " + ", ".join(offenders)
@@ -1133,6 +1148,123 @@ def test_every_workflow_state_has_a_readable_name():
         "EVALUATION", "WON", "LOST", "REJECTED", "ABANDONED",
     ):
         assert f"{state}:" in source, f"{state} has no readable name"
+
+
+def test_every_stage_status_has_a_readable_name():
+    """The status a stage sits in never reaches the screen as machinery.
+
+    PENDING and OVERDUE are the workflow's own words; the bid team reads
+    "waiting for a decision" and "overdue". The stage statuses are labelled
+    in the same place the workflow states are.
+    """
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[3] / "apps" / "web" / "lib" / "api.js"
+    ).read_text(encoding="utf-8")
+
+    for status in ("PENDING", "OVERDUE", "APPROVED", "REJECTED", "CANCELLED"):
+        assert f"{status}:" in source, f"stage status {status} has no readable name"
+
+
+def test_the_daily_brief_speaks_the_bids_teams_words():
+    """The management email never says "gate" and never prints a state name.
+
+    The digest goes to management every morning. A line like "3 gate(s) past
+    their SLA" or "state GATE1" shows them the machinery, not the bid.
+    """
+    from app.services import digest
+
+    text = digest.render_text(
+        {
+            "built_at": utcnow(),
+            "ranked": [],
+            "closing": [],
+            "overdue_gates": 2,
+            "pending_gates": 1,
+            "waiting": 0,
+        }
+    )
+    assert "gate" not in text.lower()
+    assert "stage" in text.lower()
+    for raw_state in ("GATE1", "GATE2", "NORMALIZED", "ANALYZED", "DOCS_FETCHED"):
+        assert raw_state not in text
+
+
+def test_a_stage_opening_says_stage_not_gate(client, auth):
+    """The notification a decision creates says "Stage", not "Gate"."""
+    from sqlalchemy import select
+
+    from app.models import NotificationEvent, Opportunity
+
+    db = _session()
+    try:
+        opp = Opportunity(
+            title="Notification wording tender",
+            buyer_name="Test buyer",
+            buyer_ref="WORD-1",
+            state="NORMALIZED",
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    from app.services import workflow
+
+    db = _session()
+    try:
+        opp = db.get(Opportunity, opp_id)
+        workflow.open_gate(db, opp, gate=1, title="Go / No-Go", owner_role="bid_manager", sla_hours=48)
+    finally:
+        db.close()
+
+    db = _session()
+    try:
+        titles = [
+            n.title
+            for n in db.execute(
+                select(NotificationEvent).where(NotificationEvent.opportunity_id == opp_id)
+            )
+            .scalars()
+            .all()
+        ]
+    finally:
+        db.close()
+
+    assert titles, "opening a stage must tell the owner"
+    for title in titles:
+        assert "Gate" not in title
+        assert "Stage" in title
+
+
+def test_deciding_a_decided_stage_speaks_plainly(client, auth):
+    """A second decision on a finished stage says what happened, plainly."""
+    opp_id = _make_opportunity(client, auth, title="Already decided stage")
+    db, opp = _get(opp_id)
+    from app.services import workflow
+
+    workflow.open_gate(db, opp, gate=1, title="Go / No-Go", owner_role="bid_manager", sla_hours=48)
+    gate_id = opp.gate_tasks[0].id
+    db.close()
+
+    first = client.post(
+        f"/api/gates/{gate_id}/decide",
+        json={"decision": "GO", "comment": ""},
+        headers=auth,
+    )
+    assert first.status_code == 200, first.text
+
+    second = client.post(
+        f"/api/gates/{gate_id}/decide",
+        json={"decision": "NO_GO", "comment": ""},
+        headers=auth,
+    )
+    assert second.status_code == 400
+    detail = second.json()["detail"]
+    assert "Gate" not in detail
+    assert "already" in detail.lower()
 
 
 # ----------------------------------------------------------------------

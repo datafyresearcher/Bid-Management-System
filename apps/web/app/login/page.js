@@ -103,7 +103,7 @@ export default function LoginPage() {
         </h1>
         <p className="login-company">AL-Hussain Traders &amp; Engineers PVT. LTD.</p>
         <p className="login-desc">
-          AI Powered Bid Management System — tender discovery, triage, gated review and proposal
+          AI Powered Bid Management System — tender discovery, triage, staged review and proposal
           drafting.
         </p>
         {error ? <div className="notice err">{error}</div> : null}

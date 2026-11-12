@@ -90,7 +90,7 @@ export default function AdminPage() {
       const result = await api("/api/admin/digest/preview");
       setDigestPreview(result.text);
       setInfo(
-        `The brief lists ${result.ranked} ranked tender(s); ${result.overdue_gates} gate(s) past SLA, ${result.pending_gates} open.`
+        `The brief lists ${result.ranked} ranked tender(s); ${result.overdue_gates} stage(s) past their review time, ${result.pending_gates} open.`
       );
     } catch (e) {
       setError(e.message);
@@ -389,7 +389,7 @@ export default function AdminPage() {
           </h3>
           <p className="muted">
             The ranked executive brief — the tenders worth attention, the ones closing soon, and the
-            gate counts. It is sent to the configured recipients every morning by the scheduler; this
+            stage counts. It is sent to the configured recipients every morning by the scheduler; this
             checks what it says and that email delivery works.
           </p>
           {digestPreview ? <pre className="muted" style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{digestPreview}</pre> : null}

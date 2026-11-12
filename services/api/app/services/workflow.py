@@ -92,8 +92,8 @@ def open_gate(db, opp, gate, title, owner_role=None, sla_hours=None, inputs=None
     notifications.notify(
         db,
         "gate",
-        f"Gate {gate} pending: {title[:100]}",
-        f"Owner role: {owner_role} | SLA {sla_hours}h",
+        f"Stage {gate} — a decision is needed: {title[:100]}",
+        f"Owner role: {owner_role} | review time {sla_hours}h",
         severity="warning" if sla_hours <= 24 else "info",
         opportunity_id=opp.id,
     )
@@ -169,7 +169,7 @@ def decide_gate(db, task, decision, actor=None, comment="", reason_code=""):
                 db,
                 "submission",
                 f"Submission not confirmed: {opp.title[:90]}",
-                comment or "Gate 5 closed without submission confirmation — reopen when submitted.",
+                comment or "Stage 5 closed without submission confirmation — reopen when submitted.",
                 severity="warning",
                 opportunity_id=opp.id,
             )
@@ -181,7 +181,7 @@ def reopen(db, task, opp, note):
     task.decision = ""
     task.decided_at = None
     db.commit()
-    notifications.notify(db, "gate", f"Gate {task.gate} reopened: {task.title[:90]}", note, severity="info", opportunity_id=opp.id)
+    notifications.notify(db, "gate", f"Stage {task.gate} reopened: {task.title[:90]}", note, severity="info", opportunity_id=opp.id)
 
 
 def abandon(db, opp, reason_code, comment="", actor=None):

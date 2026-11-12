@@ -21,6 +21,7 @@ from app.db import SessionLocal
 from app.models import GateTask, NotificationEvent, Opportunity, User
 from app.services import emailer
 from app.services.utils import utcnow
+from app.services.wording import state_label
 
 logger = logging.getLogger("bms.digest")
 
@@ -137,7 +138,7 @@ def render_text(digest: dict) -> str:
             score = f"{o.score_total:.0f}/100" if o.score_total is not None else "unscored"
             deadline = o.submission_deadline.strftime("%Y-%m-%d") if o.submission_deadline else "—"
             lines.append(f"  [{score}] {o.title[:100]}")
-            lines.append(f"          {o.buyer_name} · deadline {deadline} · state {o.state}")
+            lines.append(f"          {o.buyer_name} · deadline {deadline} · {state_label(o.state)}")
             if o.estimated_value:
                 lines.append(f"          value {o.currency} {o.estimated_value:,.0f}")
         lines.append("")
@@ -154,9 +155,9 @@ def render_text(digest: dict) -> str:
 
     counts = []
     if digest["overdue_gates"]:
-        counts.append(f"{digest['overdue_gates']} gate(s) past their SLA")
+        counts.append(f"{digest['overdue_gates']} stage(s) past their review time")
     if digest["pending_gates"]:
-        counts.append(f"{digest['pending_gates']} gate(s) open")
+        counts.append(f"{digest['pending_gates']} stage(s) open")
     if digest["waiting"]:
         counts.append(f"{digest['waiting']} tender(s) awaiting triage")
     if counts:

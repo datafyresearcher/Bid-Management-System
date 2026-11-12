@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   api, cacheGet, cacheSet, CHECKLIST_STATUSES, checklistStatusLabel, daysTo, DECISIONS, documentsStatusLabel,
-  fmtDate, fmtDateTime, fmtMoney, RELATED_KIND_LABELS, severityClass, stateClass, stateLabel, STAGE_LABELS,
+  fmtDate, fmtDateTime, fmtMoney, complianceStatusLabel, decisionLabel, gateStatusLabel, RELATED_KIND_LABELS, sectionStatusLabel,
+  severityClass, stateClass, stateLabel, STAGE_LABELS, submissionStatusLabel,
 } from "../../../lib/api";
 import { tierClass } from "../../../components/SourceTag";
 import BrandLoader from "../../../components/Loading";
@@ -83,18 +84,18 @@ export default function OpportunityPage() {
   const d = daysTo(opp.submission_deadline);
   const expired = opp.deadline_status === "expired";
 
-  const decide = (gate) => {
+  const decide = (gateTask) => {
     const decision = window.prompt(
-      `Decision for ${STAGE_LABELS[gate]}: ${DECISIONS[gate].map(([v]) => v).join(" / ")}`,
-      DECISIONS[gate][0][0]
+      `Decision for ${STAGE_LABELS[gateTask.gate]}: ${DECISIONS[gateTask.gate].map(([v]) => v).join(" / ")}`,
+      DECISIONS[gateTask.gate][0][0]
     );
     if (!decision) return;
     act(
-      () => api(`/api/gates/${gate.id}/decide`, {
+      () => api(`/api/gates/${gateTask.id}/decide`, {
         method: "POST",
-        body: JSON.stringify({ decision: decision.trim().toUpperCase().replace("-", "_"), comment: comments[gate.id] || "" }),
+        body: JSON.stringify({ decision: decision.trim().toUpperCase().replace("-", "_"), comment: comments[gateTask.id] || "" }),
       }),
-      `Stage ${gate} decided: ${decision}`
+      `Stage ${gateTask.gate} decided: ${decision}`
     );
   };
 
@@ -402,7 +403,7 @@ export default function OpportunityPage() {
                       <tr key={c.id}>
                         <td data-label="Requirement">{c.requirement.slice(0, 120)}<div className="muted">{c.category}</div></td>
                         <td data-label="Evidence">{c.evidence_ref || c.evidence_type}</td>
-                        <td data-label="Status"><span className="badge">{c.status}</span></td>
+                        <td data-label="Status"><span className="badge">{complianceStatusLabel(c.status)}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -545,8 +546,11 @@ export default function OpportunityPage() {
               <>
                 <p><span className="badge badge-amber">{STAGE_LABELS[pendingGate.gate]}</span> {pendingGate.title}</p>
                 <p className="muted">Owner role: {pendingGate.owner_role} · due {fmtDateTime(pendingGate.due_at)}</p>
-                {pendingGate.inputs_snapshot ? (
-                  <pre className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{JSON.stringify(pendingGate.inputs_snapshot, null, 2)}</pre>
+                {pendingGate.inputs_snapshot && Object.keys(pendingGate.inputs_snapshot).length ? (
+                  <details>
+                    <summary className="muted">Details</summary>
+                    <pre className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{JSON.stringify(pendingGate.inputs_snapshot, null, 2)}</pre>
+                  </details>
                 ) : null}
                 <label>Comment</label>
                 <textarea value={comments[pendingGate.id] || ""} onChange={(e) => setComments({ ...comments, [pendingGate.id]: e.target.value })} />
@@ -569,7 +573,7 @@ export default function OpportunityPage() {
                       {label}
                     </button>
                   ))}
-                  <button className="btn small" disabled={busy} onClick={() => decide(pendingGate.gate)}>Another decision…</button>
+                  <button className="btn small" disabled={busy} onClick={() => decide(pendingGate)}>Another decision…</button>
                 </div>
               </>
             ) : (
@@ -581,7 +585,7 @@ export default function OpportunityPage() {
             <ul className="timeline">
               {(opp.gates || []).map((g) => (
                 <li key={g.id}>
-                  <div><span className="badge">{STAGE_LABELS[g.gate]}</span> <strong>{g.status}</strong> {g.decision ? `· ${g.decision}` : ""}</div>
+                  <div><span className="badge">{STAGE_LABELS[g.gate]}</span> <strong>{gateStatusLabel(g.status)}</strong>{g.decision ? ` · ${decisionLabel(g.gate, g.decision)}` : ""}</div>
                   <div className="t-meta">
                     owner {g.owner_role} · due {fmtDateTime(g.due_at)}
                     {g.decided_at ? ` · decided ${fmtDateTime(g.decided_at)}` : ""}
@@ -641,7 +645,7 @@ export default function OpportunityPage() {
           </div>
           <div className="card">
             <div className="section-title">
-              <h3>Proposal {proposal ? `(${proposal.status}, v${proposal.version})` : "(not drafted)"}</h3>
+              <h3>Proposal {proposal ? `(${submissionStatusLabel(proposal.status)}, v${proposal.version})` : "(not drafted)"}</h3>
               <div className="row-actions">
                 <button className="btn small primary" disabled={busy} onClick={() => act(() => api(`/api/proposals/${id}/generate`, { method: "POST" }), "Proposal generated")}>
                   {proposal ? "Regenerate" : "Generate draft"}
@@ -663,7 +667,7 @@ export default function OpportunityPage() {
         <div className="grid cols-2">
           <div className="card">
             <div className="section-title">
-              <h3>Submission pack {submission ? `(${submission.status})` : ""}</h3>
+              <h3>Submission pack {submission ? `(${submissionStatusLabel(submission.status)})` : ""}</h3>
             </div>
             {submission && submission.checklist ? (
               <>
@@ -723,7 +727,7 @@ function SectionEditor({ section, busy, onSave }) {
     <div className="card section-card">
       <div className="section-title">
         <h3 style={{ textTransform: "none", fontSize: 14 }}>
-          {section.title} <span className={section.status === "GAPS" ? "badge badge-amber" : "badge badge-green"}>{section.status}</span>
+          {section.title} <span className={section.status === "GAPS" ? "badge badge-amber" : "badge badge-green"}>{sectionStatusLabel(section.status)}</span>
         </h3>
         <button className="btn small" disabled={busy || content === section.content} onClick={() => onSave(section, content)}>
           {busy ? "Saving…" : "Save"}
