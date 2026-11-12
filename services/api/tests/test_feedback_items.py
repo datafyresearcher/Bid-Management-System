@@ -654,6 +654,39 @@ def test_the_boq_estimate_reaches_the_record(client, auth):
     assert detail["boq_estimate_note"]
 
 
+def test_the_implied_value_reaches_the_lists(client, auth):
+    """The inbox's value column shows the implied value once it exists.
+
+    None of the portals publish an estimated cost with their listings, so a
+    tender the team is working on would sit at "unknown" in every list even
+    after its document had been read and the implied value worked out. The
+    list endpoint carries the implied value beside the stated one, so the
+    column fills for the tenders being worked and stays honest for the rest.
+    """
+    opp_id = _make_opportunity(client, auth, title="Implied value in the list")
+    db, opp = _get(opp_id)
+    db.add(
+        _document_for(
+            db,
+            opp,
+            "ITT.txt",
+            "Bid security of PKR 90,000 shall be furnished, being 2% of the estimated cost "
+            "of the works. Last date for submission of bids: 10-Feb-2027.",
+        )
+    )
+    db.commit()
+    extractor.run(db, opp)
+    db.close()
+
+    listing = client.get(
+        "/api/opportunities", params={"q": "Implied value in the list", "page_size": 10},
+        headers=auth,
+    ).json()
+    mine = [i for i in listing["items"] if i["id"] == opp_id]
+    assert mine, "the tender is missing from the list"
+    assert mine[0]["estimated_boq_value"] == 4_500_000
+
+
 def test_the_facts_are_on_the_record_even_when_the_request_runs_out_of_time(client, auth):
     """A model call that hangs must not take the tender's numbers with it.
 

@@ -222,7 +222,15 @@ export default function PipelinePage() {
                             {expired ? <div className="muted">Past deadline</div> : null}
                           </td>
                           <td data-label="Buyer">{o.buyer_name}<div className="muted">{o.area}</div></td>
-                          <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}</td>
+                          <td data-label="Value">
+                            {o.estimated_value ? (
+                              fmtMoney(o.estimated_value, o.currency)
+                            ) : o.estimated_boq_value ? (
+                              <>{fmtMoney(o.estimated_boq_value, o.currency)}<div className="muted">indicative</div></>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
                           <td data-label="Deadline" className={d !== null && d <= 7 ? "score-mid" : ""}>
                             {fmtDate(o.submission_deadline)}
                             {o.submission_deadline ? (

@@ -96,6 +96,10 @@ def opportunity_brief(o):
         "estimated_value": o.estimated_value,
         "currency": o.currency,
         "value_band": o.value_band,
+        # The value implied by the bid security, for the lists: a tender the
+        # portals published without an estimated cost still shows a figure
+        # once its document has been read — marked indicative in the UI.
+        "estimated_boq_value": o.estimated_boq_value,
         "published_at": iso(o.published_at),
         "submission_deadline": iso(o.submission_deadline),
         "opening_at": iso(o.opening_at),

@@ -228,7 +228,15 @@ export default function InboxPage() {
                   ) : null}
                 </td>
                 <td data-label="Category">{o.category_internal}<div className="muted">{o.tender_type}</div></td>
-                <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></td>
+                <td data-label="Value">
+                  {o.estimated_value ? (
+                    <>{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></>
+                  ) : o.estimated_boq_value ? (
+                    <>{fmtMoney(o.estimated_boq_value, o.currency)}<div className="muted">indicative — implied from the bid security</div></>
+                  ) : (
+                    <div className="muted">— not published yet</div>
+                  )}
+                </td>
                 <td data-label="Deadline">
                   {fmtDate(o.submission_deadline)}
                   {!o.submission_deadline ? <div className="muted">No closing date on file</div> : null}
