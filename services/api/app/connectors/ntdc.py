@@ -7,6 +7,7 @@ endpoint returns the whole tender history, so only recent records are taken.
 
 import json
 import re
+from urllib.parse import quote
 
 from app.connectors.base import BaseConnector
 from app.services.utils import parse_date
@@ -21,6 +22,22 @@ REFERENCE_PATTERNS = [
     re.compile(r"\b((?:[A-Z]{2,6}[-/]){1,4}[A-Z0-9\-]{2,12}/\d{4}(?:-\d{2})?)\b"),
     re.compile(r"\b((?:RFP|IFB|EOI|TS|LOT)-[A-Z0-9\-]{4,30})\b", re.I),
 ]
+
+
+def encode_path(path: str) -> str:
+    """Percent-encode a published file path so the link cannot be truncated.
+
+    NTDC's file names carry spaces, brackets and the occasional '#'. Left
+    raw, the '#' would cut the link short at the fragment and the rest of the
+    file name would never be sent to the server, so the link would open the
+    wrong thing — or nothing at all.
+
+    The '%' is kept as a safe character so a path that is already encoded is
+    not encoded a second time.
+    """
+    if not path:
+        return ""
+    return quote(path, safe="/%")
 
 
 def extract_reference(title: str) -> str:
@@ -93,11 +110,15 @@ class NTDCConnector(BaseConnector):
         items = payload if isinstance(payload, list) else payload.get("notices", [])
         notices = []
         for item in items:
+            document = item.get("document_url", "")
             notices.append(
                 {
                     "native_id": item.get("native_id") or item.get("id") or "",
-                    "url": item.get("url", self.LISTING_URL),
-                    "document_url": item.get("document_url", ""),
+                    # The same rule as the live feed: the notice link opens the
+                    # tender's own file, and falls back to the listing when
+                    # the capture carries no file.
+                    "url": item.get("url") or self.notice_url(document),
+                    "document_url": document,
                     "related_documents": item.get("related_documents", []) or [],
                     "title": item.get("title", ""),
                     "buyer_name": item.get("buyer_name", ""),
@@ -168,9 +189,9 @@ class NTDCConnector(BaseConnector):
             notices.append(
                 {
                     "native_id": f"ntdc-{record.get('id')}",
-                    # The site publishes no page per notice, so the notice link
-                    # is the tenders listing the reader searches by reference.
-                    "url": self.LISTING_URL,
+                    # The link that opens this tender. NTDC has no page per
+                    # notice, so it points at the tender's own file.
+                    "url": self.notice_url(document),
                     # The bidding document itself, which is what the bid team
                     # actually needs to open.
                     "document_url": self.document_url(document),
@@ -288,6 +309,25 @@ class NTDCConnector(BaseConnector):
             return self.DOCUMENT_BASE
         if path.startswith("http://") or path.startswith("https://"):
             return path
-        if path.startswith("/"):
-            return f"{self.DOCUMENT_BASE}{path}"
-        return f"{self.DOCUMENT_BASE}/{path}"
+        # The published file names carry spaces, brackets and the occasional
+        # '#'. Left raw, the '#' would cut the link short at the fragment and
+        # the rest of the file name would never be sent to the server, so the
+        # link would open the wrong thing — or nothing at all.
+        return f"{self.DOCUMENT_BASE}{encode_path(path)}"
+
+    def notice_url(self, path: str) -> str:
+        """Where a reader should go to open this tender.
+
+        NTDC publishes no page per notice. Its tenders page is a single-page
+        application that opens each tender in a dialog, so there is no
+        addressable URL for one tender — the tender is a file, and that file
+        is what the notice link points at. Sending the reader to the tenders
+        listing instead means they land on the NTDC home page with no sign of
+        the tender they asked for, which is what the link used to do.
+
+        Nine notices in the feed carry no file at all; for those the listing
+        is the only place the notice can be seen, so it stays.
+        """
+        if not path:
+            return self.LISTING_URL
+        return self.document_url(path)

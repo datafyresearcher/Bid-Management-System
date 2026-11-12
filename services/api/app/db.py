@@ -192,6 +192,72 @@ def backfill_opportunity_sources():
         session.close()
 
 
+def backfill_ntdc_notice_links():
+    """Point every NTDC tender's notice link at the tender itself.
+
+    NTDC publishes no page per notice — its tenders page is a single-page
+    application that opens each tender in a dialog — so the tender is a file,
+    and that file is the only addressable link to it. The records captured
+    before that was understood carried the tenders listing as their notice
+    link, which is why clicking "Open notice" for an NTDC tender opened the
+    NTDC website instead of the tender.
+
+    The document link is already captured against each record, so this
+    rewrites the notice links in place and every tender already on file opens
+    its own document without waiting for the next scan.
+    """
+    from sqlalchemy import select
+
+    from app.connectors.ntdc import NTDCConnector, encode_path
+    from app.models import Opportunity
+
+    listing = NTDCConnector.LISTING_URL
+    base = NTDCConnector.DOCUMENT_BASE
+    session = SessionLocal()
+    try:
+        rows = session.execute(select(Opportunity.id, Opportunity.source_refs)).all()
+        updates = []
+        for opp_id, refs in rows:
+            if not isinstance(refs, list) or not refs:
+                continue
+            updated = []
+            dirty = False
+            for ref in refs:
+                if not isinstance(ref, dict) or ref.get("source_code") != "ntdc":
+                    updated.append(ref)
+                    continue
+                document = ref.get("document_url") or ""
+                if document.startswith(base):
+                    target = base + encode_path(document[len(base):])
+                elif document:
+                    target = document
+                else:
+                    # No file was published for this notice, so the listing is
+                    # the only place it can be seen.
+                    target = listing
+                if ref.get("url") != target:
+                    ref = dict(ref)
+                    ref["url"] = target
+                    dirty = True
+                updated.append(ref)
+            if dirty:
+                updates.append({"id": opp_id, "source_refs": updated})
+        if updates:
+            # Written in one batch rather than one statement at a time. On a
+            # serverless instance a cold start is the wrong place to spend
+            # thousands of round trips to a database on another continent.
+            session.bulk_update_mappings(Opportunity, updates)
+            session.commit()
+            logger.info("Pointed %s NTDC notice links at their own tender", len(updates))
+        return len(updates)
+    except Exception as exc:
+        logger.warning("NTDC notice link backfill skipped: %s", exc)
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
 def init_db():
     from app import models
 
@@ -214,3 +280,4 @@ def init_db():
     # pointed at a source row.
     sync_source_registry()
     backfill_opportunity_sources()
+    backfill_ntdc_notice_links()
