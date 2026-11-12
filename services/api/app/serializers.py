@@ -130,6 +130,7 @@ def opportunity_detail(o):
             "prequal_required": o.prequal_required,
             "qualification_thresholds": o.qualification_thresholds,
             "bid_security_amount": o.bid_security_amount,
+            "bid_security_currency": o.bid_security_currency or "",
             "bid_security_form": o.bid_security_form,
             "bid_security_percent": o.bid_security_percent,
             "estimated_boq_value": o.estimated_boq_value,

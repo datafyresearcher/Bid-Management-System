@@ -107,6 +107,7 @@ ADDED_COLUMNS = {
         ("source_id", "INTEGER"),
         ("bid_summary", "JSON"),
         ("bid_security_percent", "FLOAT"),
+        ("bid_security_currency", "VARCHAR(8) DEFAULT ''"),
         ("estimated_boq_value", "FLOAT"),
         ("boq_estimate_note", "VARCHAR(300) DEFAULT ''"),
     ],

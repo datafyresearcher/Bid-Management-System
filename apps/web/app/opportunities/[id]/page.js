@@ -282,7 +282,7 @@ export default function OpportunityPage() {
               <dd>
                 {opp.bid_security_amount ? (
                   <>
-                    {fmtMoney(opp.bid_security_amount, opp.currency)}
+                    {fmtMoney(opp.bid_security_amount, opp.bid_security_currency || opp.currency)}
                     {opp.bid_security_form ? ` (${opp.bid_security_form})` : ""}
                     {opp.bid_security_percent ? ` — ${opp.bid_security_percent}% of the estimated value` : ""}
                   </>

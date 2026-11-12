@@ -115,6 +115,10 @@ class Opportunity(Base):
     prequal_required = Column(Boolean, default=False)
     qualification_thresholds = Column(JSON)
     bid_security_amount = Column(Float)
+    # The currency the document states the security in — donor-funded
+    # tenders state it in USD, and the record's currency is not always the
+    # security's. Empty when the document carried no currency word.
+    bid_security_currency = Column(String(8), default="")
     bid_security_form = Column(String(200), default="")
     # The share of the estimated BOQ value that the bid security represents,
     # and the value implied by it. The percentage is only stored when the

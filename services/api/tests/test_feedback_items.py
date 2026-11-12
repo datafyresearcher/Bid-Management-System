@@ -850,6 +850,97 @@ def test_the_source_published_estimate_is_not_overwritten(client, auth):
     db.close()
 
 
+# These two tests are written from the standard bidding documents that are
+# really published on the NTDC portal today (AFD-TL-03-2026, NOR-140E-2026,
+# TLS-23-2026). Their clauses are what broke the calculation in practice.
+
+
+def test_a_security_tolerance_is_not_read_as_the_securitys_percentage():
+    """The buyer's tolerance of a short security is not the security's share.
+
+    The standard documents say: "Bid Security amount is short within 10% of
+    the required Bid Security amount". That 10% is how much a security may
+    fall short and still be read; it is not 10% of the estimated value.
+    Dividing by it implied a contract worth ten times what was stated, from
+    a clause that is about compliance, not value.
+    """
+    detected = extractor._detect_fields(
+        "All Bids must be accompanied by a Bid Security of amount not less than that "
+        "mentioned below. Bid security amount (minimum) = USD 56,354/- All Bids must be "
+        "accompanied with a Bid Security in USD or equivalent amount of PKR. "
+        "Bid Security amount is short within 10% of the required Bid Security amount; "
+        "and/or ii. Bid Security validity period is short by a maximum of two days."
+    )
+    assert detected["bid_security_amount"] == 56_354
+    assert "bid_security_percent" not in detected
+    assert "estimated_boq_value" not in detected
+
+
+def test_a_tolerance_clause_on_a_pkr_security_does_not_make_a_percentage():
+    """Same clause, rupee security — the percentage still means nothing."""
+    detected = extractor._detect_fields(
+        "The amount of Bid Security shall not be less than PKR 504,000/- IB 15. "
+        "Bid Security amount is short within 10% of Bid Security amount; and/or ii. "
+        "Bid Security validity period is short by a maximum of two days."
+    )
+    assert detected["bid_security_amount"] == 504_000
+    assert "bid_security_percent" not in detected
+    assert "estimated_boq_value" not in detected
+    assert "does not state the percentage" in detected["boq_estimate_note"]
+
+
+def test_a_security_stated_in_another_currency_is_not_divided_in_pkr():
+    """A security in USD implies a value in USD, and the record is in PKR.
+
+    The donor-funded tenders state their security in USD. Dividing it out in
+    the record's currency put a number on the record that was wrong by the
+    whole exchange rate, so the estimate is left unmade and the record says
+    what it would need — and the security itself is shown in the currency
+    the document wrote it in.
+    """
+    detected = extractor._detect_fields(
+        "Bid Security of USD 2,400,000 shall be furnished, being 2% of the estimated "
+        "cost of the works. Last date for submission of bids: 10-Feb-2027."
+    )
+    assert detected["bid_security_amount"] == 2_400_000
+    assert detected["bid_security_currency"] == "USD"
+    assert detected["bid_security_percent"] == 2
+    assert "estimated_boq_value" not in detected
+    assert "exchange rate" in detected["boq_estimate_note"]
+
+
+def test_a_cost_stated_in_another_currency_is_not_written_as_the_records_estimate():
+    """The document's own estimate line is only taken in the record's currency."""
+    detected = extractor._detect_fields(
+        "Estimated Cost: USD 24,000,000/- Last date for submission of bids: 10-Feb-2027."
+    )
+    assert "document_estimated_value" not in detected
+
+
+def test_a_security_stated_in_pkr_keeps_its_implied_value(client, auth):
+    """The calculation itself is untouched where the money is in rupees."""
+    opp_id = _make_opportunity(client, auth, title="PKR security end to end")
+    db, opp = _get(opp_id)
+    db.add(
+        _document_for(
+            db,
+            opp,
+            "ITT.txt",
+            "Bid security of PKR 90,000 shall be furnished, being 2% of the estimated cost "
+            "of the works. Bid Security amount is short within 10% of the required Bid "
+            "Security amount. Last date for submission of bids: 10-Feb-2027.",
+        )
+    )
+    db.commit()
+    extractor.run(db, opp)
+    db.refresh(opp)
+    assert opp.bid_security_amount == 90_000
+    assert opp.bid_security_currency == "PKR"
+    assert opp.bid_security_percent == 2
+    assert opp.estimated_boq_value == 4_500_000
+    db.close()
+
+
 # ----------------------------------------------------------------------
 # 2.9  The submission checklist
 # ----------------------------------------------------------------------

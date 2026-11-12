@@ -262,9 +262,10 @@ def _add_fields(points, add, opp, detected: dict):
 
     # --- bid security ---
     if opp.bid_security_amount:
+        currency = getattr(opp, "bid_security_currency", "") or "PKR"
         add(
             "bid_security",
-            f"Bid security: PKR {opp.bid_security_amount:,.0f}"
+            f"Bid security: {currency} {opp.bid_security_amount:,.0f}"
             + (f", in the form of a {opp.bid_security_form.lower()}." if opp.bid_security_form else "."),
             "field",
             "Tender document",

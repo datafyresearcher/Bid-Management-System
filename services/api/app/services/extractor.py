@@ -128,6 +128,29 @@ OTHER_PERCENTAGE_SUBJECTS = (
     "withholding",
 )
 
+# The wording the standard bidding documents use for how much short a bid
+# security may fall and still be accepted — "Bid Security amount is short
+# within 10% of the required Bid Security amount". That 10% is the buyer's
+# tolerance of the security's own amount, and reading it as the security's
+# share of the estimated value puts the implied value out by tens of times.
+TOLERANCE_MARKERS = (
+    "short within",
+    "short by",
+    "deviation greater",
+    "deviation is",
+    "validity period is short",
+)
+
+# A base that is the security itself. "of the required Bid Security amount"
+# satisfies the loose base pattern (it ends in "amount"), but a percentage
+# of the security says nothing about the value of the work.
+SECURITY_BASE_REJECTS = (
+    "bid security amount",
+    "security amount",
+    "of the bid security",
+    "of bid security",
+)
+
 TENDER_FEE_TRIGGERS = [
     r"tender\s+document\s+fee",
     r"tender\s+fee",
@@ -170,6 +193,26 @@ MONEY_TOKEN = re.compile(
     r"(?!\s*%)",
     re.I,
 )
+
+# The currency word a figure is written with. Every money token carries one
+# by construction, and the same number means different money in different
+# currencies — a value divided out of a security stated in USD is USD, not
+# the record's PKR.
+CURRENCY_TOKENS = {
+    "pkr": "PKR",
+    "rs": "PKR",
+    "rupees": "PKR",
+    "rupee": "PKR",
+    "usd": "USD",
+    "us$": "USD",
+    "$": "USD",
+}
+
+# Currencies a Pakistani tender's record is not written in. A bid security
+# stated in one of these cannot have its implied value divided out in the
+# record's currency without the exchange rate — which the system does not
+# guess.
+FOREIGN_CURRENCIES = {"USD", "EUR", "GBP", "CNY", "JPY", "AED", "SAR"}
 
 # A bid security is a sum of money, and a sum in the low hundreds is not one.
 # At that size the figure is a rate, a serial number or a stamp-paper value
@@ -230,8 +273,8 @@ def _after(text, triggers, window=120):
     return text[match.end() : match.end() + window]
 
 
-def _closest_money(text, triggers, max_distance=200, minimum=0):
-    """The money amount sitting closest to any trigger phrase.
+def _closest_money_with_currency(text, triggers, max_distance=200, minimum=0):
+    """The money amount sitting closest to any trigger, with its currency.
 
     Proximity matters: a section heading like "BID SECURITY AND TENDER FEE"
     is a trigger match too, but the amount that belongs to it is far away.
@@ -242,6 +285,14 @@ def _closest_money(text, triggers, max_distance=200, minimum=0):
     search carries on: the nearest figure is sometimes a rate or a serial
     number that only looks like an amount, and the one that belongs to the
     field is further along.
+
+    The currency word the figure is written with comes back with it,
+    because the same number means different money in different currencies:
+    a bid security of "USD 56,354" is not 56,354 rupees, and a value
+    divided out of it in the record's currency would be wrong by the whole
+    exchange rate. Every token this reader accepts is currency-denominated
+    by construction — a bare number is a rate or a serial number, not an
+    amount.
     """
     best = None
     for trigger in triggers:
@@ -252,10 +303,23 @@ def _closest_money(text, triggers, max_distance=200, minimum=0):
                 if amount is None or amount < minimum:
                     continue
                 distance = match.start() - start
+                # group(1)'s start is an index into the whole text, so the
+                # currency word in front of the figure is the part of the
+                # token before it.
+                prefix = match.group(0)[: match.start(1) - match.start(0)].strip().strip(".:-").lower()
+                currency = CURRENCY_TOKENS.get(prefix, "")
                 if best is None or distance < best[0]:
-                    best = (distance, amount)
+                    best = (distance, amount, currency)
                 break
-    return best[1] if best else None
+    if best is None:
+        return None, ""
+    return best[1], best[2]
+
+
+def _closest_money(text, triggers, max_distance=200, minimum=0):
+    """The money amount sitting closest to any trigger phrase."""
+    amount, _ = _closest_money_with_currency(text, triggers, max_distance, minimum)
+    return amount
 
 
 def _closest_date(text, triggers, max_distance=200):
@@ -360,12 +424,30 @@ def _bid_security_percent(text: str):
                 # 0.05% of the contract price" is a percentage too, and so is
                 # "retain 5% of the contract value as retention money".
                 near = _flat(window[max(0, match.start() - 70) : match.start()]).lower()
-                tail = _flat(window[match.end() : match.end() + 100]).lower()
+                tail_full = _flat(window[match.end() : match.end() + 100]).lower()
+                # The clause the percentage itself sits in, not the sentence
+                # that happens to follow it — a tolerance clause two lines
+                # down must not poison a percentage that was read cleanly.
+                tail = tail_full.split(". ")[0]
                 if any(other in near or other in tail for other in OTHER_PERCENTAGE_SUBJECTS):
                     continue
+                # A standard bidding document also tells the buyer how much
+                # short a security may fall and still be read: "Bid Security
+                # amount is short within 10% of the required Bid Security
+                # amount". That 10% is a tolerance of the security's own
+                # amount, not the security's share of the estimated value —
+                # dividing by it would imply a value out by tens of times.
+                if any(marker in near or marker in tail for marker in TOLERANCE_MARKERS):
+                    continue
                 # The percentage has to be tied to a base value for it to
-                # mean anything: "2% of the estimated cost".
-                if not any(phrase in tail for phrase in BOQ_BASE_PHRASES) and not BOQ_BASE_PATTERN.search(tail):
+                # mean anything: "2% of the estimated cost". And the base
+                # has to be the contract's worth — "of the required Bid
+                # Security amount" is the security itself, and a percentage
+                # of the security says nothing about the value of the work.
+                base = BOQ_BASE_PATTERN.search(tail_full)
+                if not any(phrase in tail_full for phrase in BOQ_BASE_PHRASES) and not base:
+                    continue
+                if base and any(own in base.group(0).lower() for own in SECURITY_BASE_REJECTS):
                     continue
                 found.setdefault(value, match.start())
     if not found:
@@ -391,9 +473,13 @@ def _detect_fields(text: str) -> dict:
         detected["opening_at"] = parsed
 
     # --- bid security ---
-    amount = _closest_money(text, BID_SECURITY_TRIGGERS, minimum=MIN_BID_SECURITY)
+    amount, security_currency = _closest_money_with_currency(
+        text, BID_SECURITY_TRIGGERS, minimum=MIN_BID_SECURITY
+    )
     if amount:
         detected["bid_security_amount"] = amount
+        if security_currency:
+            detected["bid_security_currency"] = security_currency
     # The percentage is read whether or not an amount was found: a tender
     # that states both is the normal case, and the implied BOQ value needs
     # the two together.
@@ -412,12 +498,21 @@ def _detect_fields(text: str) -> dict:
     #     estimated BOQ value = bid-security amount / bid-security percentage
     # The percentage has to come from the tender document. Where it is not
     # stated, or is stated ambiguously, the estimate is not made and the
-    # record says so instead.
-    if amount and percent:
+    # record says so instead. And where the security is stated in another
+    # currency — the donor-funded tenders do — the division would hand back
+    # a number in the wrong currency, so it is not made either.
+    foreign = security_currency in FOREIGN_CURRENCIES
+    if amount and percent and not foreign:
         detected["estimated_boq_value"] = round(amount / (percent / 100.0), 2)
         detected["boq_estimate_note"] = (
             f"Indicative only: implied from the bid security of {amount:,.0f} at {percent:g}% "
             "of the estimated value. Confirm against the tender document before pricing."
+        )
+    elif amount and percent and foreign:
+        detected["boq_estimate_note"] = (
+            f"The bid security is stated as {security_currency} {amount:,.0f} at {percent:g}% of the "
+            "estimated value, so the value it implies is in that currency too. The estimated BOQ "
+            "value has not been calculated — it needs the exchange rate. Verify from the tender document."
         )
     elif amount and ambiguous:
         detected["boq_estimate_note"] = (
@@ -468,9 +563,12 @@ def _detect_fields(text: str) -> dict:
         detected["qualification_thresholds"] = thresholds
 
     # --- contract value stated in the document ---
-    amount = _closest_money(text, ESTIMATED_VALUE_TRIGGERS)
-    if amount:
-        detected["document_estimated_value"] = amount
+    # Only a figure stated in the record's own currency is taken: a cost
+    # printed in USD is real, but writing it on the record as the estimated
+    # value would show rupees that were never stated.
+    est_amount, est_currency = _closest_money_with_currency(text, ESTIMATED_VALUE_TRIGGERS)
+    if est_amount and est_currency not in FOREIGN_CURRENCIES:
+        detected["document_estimated_value"] = est_amount
 
     # --- key personnel the tender asks for ---
     personnel = _key_personnel(text)
@@ -540,6 +638,7 @@ def _apply_fields(opp, detected: dict) -> None:
         "submission_deadline",
         "opening_at",
         "bid_security_amount",
+        "bid_security_currency",
         "bid_security_form",
         "bid_security_percent",
         "estimated_boq_value",
@@ -573,6 +672,8 @@ def _apply_fields(opp, detected: dict) -> None:
     if "bid_security_percent" not in detected:
         opp.bid_security_percent = None
         opp.estimated_boq_value = None
+    if "bid_security_currency" not in detected:
+        opp.bid_security_currency = ""
     if "boq_estimate_note" not in detected:
         opp.boq_estimate_note = ""
 

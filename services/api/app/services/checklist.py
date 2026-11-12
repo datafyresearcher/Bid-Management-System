@@ -174,8 +174,9 @@ def build(db, opp, text: str) -> list:
             "record",
         )
     if opp.bid_security_amount:
+        currency = getattr(opp, "bid_security_currency", "") or "PKR"
         add(
-            f"Commercial — bid security of PKR {opp.bid_security_amount:,.0f} arranged",
+            f"Commercial — bid security of {currency} {opp.bid_security_amount:,.0f} arranged",
             "commercial",
             "",
             None,
