@@ -305,7 +305,27 @@ def capture_document(
     opp.documents_status = "uploaded"
     db.commit()
 
-    result = workflow.reanalyze(db, opp)
+    # The hand-over has succeeded by this point — the file is on file and
+    # committed. The analysis that follows reads it, but an analysis that
+    # fails must not fail the hand-over: the bridge would believe the file
+    # was refused and carry it over again, and the record would be left
+    # looking half-done. Whatever was read before the failure is already on
+    # the record, the next re-analyse picks the rest up, and what went wrong
+    # is kept in the audit trail.
+    analysis_error = ""
+    try:
+        result = workflow.reanalyze(db, opp)
+    except Exception as exc:
+        db.rollback()
+        result = None
+        analysis_error = str(exc)[:300]
+        audit.record(
+            db,
+            "document.analysis_failed",
+            actor="capture bridge",
+            opportunity_id=opp.id,
+            detail={"filename": filename, "error": analysis_error},
+        )
     db.refresh(opp)
     audit.record(
         db,
@@ -321,6 +341,7 @@ def capture_document(
         "bid_security_percent": opp.bid_security_percent,
         "estimated_boq_value": opp.estimated_boq_value,
         "analysis": result,
+        "analysis_error": analysis_error,
     }
 
 
