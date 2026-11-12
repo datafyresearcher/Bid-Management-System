@@ -275,6 +275,72 @@ def backfill_ntdc_notice_links():
         session.close()
 
 
+def backfill_derived_document_links():
+    """Give every tender on file the document link its own id already determines.
+
+    Some authorities publish the bidding document under a path built out of
+    the notice's own id. Where that is the case, the link is known from the
+    record alone — no request to the portal is needed to find it, and every
+    tender on file can be given it without waiting for the next scan to walk
+    past it again.
+
+    A record that already carries a link is left exactly as it is. This only
+    ever fills in a link that is missing.
+    """
+    from sqlalchemy import select
+
+    from app.connectors.registry import get_connector
+    from app.models import Opportunity, Source
+
+    session = SessionLocal()
+    try:
+        connectors = {}
+        for source in session.execute(select(Source)).scalars().all():
+            connector = get_connector(source)
+            if connector is not None:
+                connectors[source.id] = connector
+        if not connectors:
+            return 0
+
+        rows = session.execute(select(Opportunity.id, Opportunity.source_refs)).all()
+        updates = []
+        for opp_id, refs in rows:
+            if not isinstance(refs, list) or not refs:
+                continue
+            updated = []
+            dirty = False
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    updated.append(ref)
+                    continue
+                connector = connectors.get(ref.get("source_id"))
+                if connector is None or ref.get("document_url"):
+                    updated.append(ref)
+                    continue
+                try:
+                    derived = connector.document_url_for(ref.get("native_id") or "") or ""
+                except Exception:
+                    derived = ""
+                if derived:
+                    ref = dict(ref)
+                    ref["document_url"] = derived
+                    dirty = True
+                updated.append(ref)
+            if dirty:
+                updates.append({"id": opp_id, "source_refs": updated})
+        if updates:
+            session.bulk_update_mappings(Opportunity, updates)
+            session.commit()
+            logger.info("Gave %s tenders the document link their id determines", len(updates))
+        return len(updates)
+    except Exception as exc:
+        logger.warning("Derived document link backfill skipped: %s", exc)
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
 def init_db():
     from app import models
 
@@ -298,3 +364,4 @@ def init_db():
     sync_source_registry()
     backfill_opportunity_sources()
     backfill_ntdc_notice_links()
+    backfill_derived_document_links()

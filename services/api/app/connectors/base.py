@@ -54,6 +54,19 @@ class BaseConnector:
         """
         return None
 
+    def document_url_for(self, native_id: str) -> str:
+        """The document link, derived from the notice's own id.
+
+        Some authorities publish the document under a path built out of the
+        notice's id, so the link is known from the id alone — no request to
+        the portal is needed to find it, and every tender on file can be
+        given its link without waiting for the next scan.
+
+        A portal that publishes the file behind a button on the tender's own
+        page cannot do this, and returns nothing here.
+        """
+        return ""
+
     # ------------------------------------------------------------------
     # Downloading a tender document
     # ------------------------------------------------------------------
