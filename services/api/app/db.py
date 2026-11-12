@@ -213,6 +213,7 @@ def backfill_ntdc_notice_links():
 
     listing = NTDCConnector.LISTING_URL
     base = NTDCConnector.DOCUMENT_BASE
+    uploads = base + "/uploads"
     session = SessionLocal()
     try:
         rows = session.execute(select(Opportunity.id, Opportunity.source_refs)).all()
@@ -231,6 +232,15 @@ def backfill_ntdc_notice_links():
                     target = base + encode_path(document[len(base):])
                 elif document:
                     target = document
+                elif (ref.get("url") or "").startswith(uploads):
+                    # The captures made before the document link was stored
+                    # carried the broken "/uploads" path as the notice link.
+                    # That path does not exist, and because the site answers
+                    # every unknown path with its application shell, the link
+                    # answered 200 with a web page instead of the tender. The
+                    # rest of the path is the site-root path, so the real file
+                    # can be recovered from it.
+                    target = base + encode_path(ref["url"][len(uploads):])
                 else:
                     # No file was published for this notice, so the listing is
                     # the only place it can be seen.

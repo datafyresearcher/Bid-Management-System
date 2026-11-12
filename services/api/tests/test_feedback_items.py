@@ -68,6 +68,92 @@ def test_the_records_already_on_file_are_pointed_at_their_own_tender():
         db.close()
 
 
+def test_the_broken_uploads_link_is_repaired():
+    """The link that was actually in the database, repaired.
+
+    Every NTDC tender captured before the document link was stored carried
+    the "/uploads" path as its notice link. That path does not exist, and
+    because NTDC answers every unknown path with its application shell, the
+    link answered 200 with a web page — so the reader got the website
+    instead of the tender, and nothing looked broken.
+
+    The rest of the path is the site-root path, so the real file is
+    recovered from it.
+    """
+    from app.db import backfill_ntdc_notice_links
+    from app.models import Opportunity
+
+    db = _session()
+    try:
+        opp = Opportunity(
+            title="An NTDC tender captured with the broken link",
+            buyer_name="NTDC",
+            buyer_ref="NTDC-OLD-2",
+            source_refs=[
+                {
+                    "source_code": "ntdc",
+                    "native_id": "ntdc-2329",
+                    "url": "https://ntdc.gov.pk/uploads/bidding/Site visit Notification_6af2c6fd5ebba.pdf",
+                    "document_url": "",
+                }
+            ],
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    backfill_ntdc_notice_links()
+
+    db = _session()
+    try:
+        stored = db.get(Opportunity, opp_id)
+        url = stored.source_refs[0]["url"]
+        assert url == (
+            "https://ntdc.gov.pk/bidding/Site%20visit%20Notification_6af2c6fd5ebba.pdf"
+        )
+        assert "/uploads/" not in url
+        assert " " not in url
+    finally:
+        db.close()
+
+
+def test_a_non_ntdc_record_is_left_alone():
+    """The repair reaches only the records it is meant to reach."""
+    from app.db import backfill_ntdc_notice_links
+    from app.models import Opportunity
+
+    db = _session()
+    try:
+        opp = Opportunity(
+            title="A PPRA Punjab tender",
+            buyer_name="PPRA",
+            buyer_ref="PPRA-1",
+            source_refs=[
+                {
+                    "source_code": "ppra_punjab",
+                    "native_id": "p-1",
+                    "url": "https://eproc.punjab.gov.pk/ActiveTenders.aspx",
+                }
+            ],
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    backfill_ntdc_notice_links()
+
+    db = _session()
+    try:
+        stored = db.get(Opportunity, opp_id)
+        assert stored.source_refs[0]["url"] == "https://eproc.punjab.gov.pk/ActiveTenders.aspx"
+    finally:
+        db.close()
+
+
 def test_a_document_that_is_really_a_page_is_refused():
     """An HTML page is never filed as a tender document.
 
