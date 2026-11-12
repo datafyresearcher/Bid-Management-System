@@ -131,11 +131,12 @@ def fetch_for_opportunity(db, opp) -> int:
 
     fetched = 0
     refs = list(opp.source_refs or [])
+    resolved_links = {}
     for ref in refs:
         source_id = ref.get("source_id")
         if not source_id:
             # A converted lead can carry a source reference with no source id.
-            # db.get() with a None key is a warning today and an error later.
+            # db.get() with a None key is a warning today and is an error later.
             continue
         source = db.get(Source, source_id)
         if not source:
@@ -145,6 +146,13 @@ def fetch_for_opportunity(db, opp) -> int:
             continue
         native_id = ref.get("native_id") or ""
         fetched_docs = connector.fetch_documents(native_id, ref=ref)
+        # A portal may publish the document only behind a button on the
+        # tender's page, in which case the file that was read from is kept on
+        # the record — so the tender ends up with a direct link to the
+        # document rather than only to the page it sits on.
+        resolved = getattr(connector, "last_document_url", "") or ""
+        if resolved:
+            resolved_links[native_id] = resolved
         if fetched_docs is None:
             continue
         for filename, content in fetched_docs:
@@ -152,6 +160,9 @@ def fetch_for_opportunity(db, opp) -> int:
                 continue
             save_document(db, opp, filename, content)
             fetched += 1
+
+    if resolved_links:
+        _keep_resolved_links(opp, resolved_links)
     if fetched == 0 and opp.documents_status == "none":
         fallback = (
             f"Notice summary (no attachments retrieved).\n"
@@ -171,6 +182,25 @@ def fetch_for_opportunity(db, opp) -> int:
         opp.documents_status = "fetched"
     db.commit()
     return fetched
+
+
+def _keep_resolved_links(opp, resolved_links: dict) -> None:
+    """Put the file links that were found onto the record's own references."""
+    refs = []
+    changed = False
+    for ref in opp.source_refs or []:
+        if not isinstance(ref, dict):
+            refs.append(ref)
+            continue
+        resolved = resolved_links.get(ref.get("native_id") or "")
+        if resolved and ref.get("document_url") != resolved:
+            ref = dict(ref)
+            ref["document_url"] = resolved
+            ref["url"] = resolved
+            changed = True
+        refs.append(ref)
+    if changed:
+        opp.source_refs = refs
 
 
 def has_document_link(opp) -> bool:

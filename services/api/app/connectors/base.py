@@ -31,6 +31,11 @@ class BaseConnector:
         self.base_url = self.listing_url
         self.fixture_mode = settings.fixtures
         self.last_raw = None
+        # The file a document was actually read from, when the portal only
+        # publishes the link on a page that has to be read first. The caller
+        # keeps it on the record, so the tender ends up with a direct link to
+        # the document rather than only to the page it sits on.
+        self.last_document_url = ""
 
     def fixture_path(self, *parts):
         return fixtures_dir().joinpath(self.source.code, *parts)
@@ -91,7 +96,7 @@ class BaseConnector:
             return None
         if not self._is_document_body(content, content_type):
             return None
-        name = filename or url.rsplit("/", 1)[-1] or "document.bin"
+        name = filename or url.split("?")[0].rsplit("/", 1)[-1] or "document.bin"
         return name, content
 
     @staticmethod

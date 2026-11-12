@@ -40,6 +40,60 @@ class EPMSFederalConnector(BaseConnector):
     adapter = "epms_federal"
     label = "Federal EPMS / EPADS portal"
 
+    def fetch_documents(self, native_id, ref=None):
+        """The bidding document the authority published for this tender.
+
+        EPMS has no document link in its listing. The tender's own page
+        carries a "Download Tender Document" button, and the file behind it
+        is named by an internal id the listing never shows, so the page has
+        to be read to find the file.
+
+        The file link that is found is kept on the connector, and the caller
+        writes it onto the record, so the tender keeps a direct link to the
+        document rather than only to the page it sits on.
+        """
+        if self.fixture_mode or not native_id:
+            return None
+        url = (ref or {}).get("document_url") or ""
+        if not url:
+            url = f"{self.base_url.rstrip('/')}/tender-details/{native_id}"
+        try:
+            html = self.client().get(url)
+        except Exception:
+            return None
+        file_url = self.document_file_url(html)
+        if not file_url:
+            return None
+        self.last_document_url = file_url
+        fetched = self.download_document(file_url)
+        if not fetched:
+            return None
+        filename, content = fetched
+        return [(filename or "bidding-document.pdf", content)]
+
+    def document_file_url(self, html: str) -> str:
+        """The link behind the page's "Download Tender Document" button.
+
+        The page also carries a "Download Advertisement" button, which is the
+        notice rather than the tender document; the two are told apart by
+        their labels, because their file names are not.
+        """
+        if not html:
+            return ""
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+        except Exception:
+            return ""
+        for anchor in soup.find_all("a", href=True):
+            label = anchor.get_text(" ", strip=True).lower()
+            if "tender document" not in label:
+                continue
+            href = anchor["href"]
+            if not href or href.startswith("#"):
+                continue
+            return self.abs_url(href)
+        return ""
+
     def fetch_listing(self):
         if self.fixture_mode:
             return self._from_fixture()
@@ -177,6 +231,11 @@ class EPMSFederalConnector(BaseConnector):
         return {
             "native_id": tender_no,
             "url": self.abs_url(detail_link),
+            # The tender's own page on the authority's site. The bidding
+            # document is published behind a "Download Tender Document"
+            # button on it, so the page is the link the record carries until
+            # the file itself has been found.
+            "document_url": self.abs_url(detail_link),
             "title": title,
             "buyer_name": "",
             "buyer_ref": tender_no,
