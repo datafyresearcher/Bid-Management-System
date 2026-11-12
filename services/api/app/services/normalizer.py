@@ -370,6 +370,11 @@ def _normalize_one(db, source, notice: dict, lookup=None):
         # portal states one, and the notice document itself.
         "reference": notice.get("portal_reference") or notice.get("buyer_ref", ""),
         "document_url": notice.get("document_url", ""),
+        # The portal publishes the notice and the bidding document as two
+        # separate files. The record points at the bidding document, and the
+        # notice is kept so that it can be fetched and read as well.
+        "notice_url": notice.get("notice_url", ""),
+        "bidding_document_url": notice.get("bidding_document_url", ""),
         # The clarifications, amendments and addenda the buyer published
         # against this tender. They are kept per notice so the record can
         # offer every one of them, not only the first.
@@ -403,6 +408,10 @@ def _normalize_one(db, source, notice: dict, lookup=None):
                         updated["url"] = source_ref["url"]
                     if source_ref.get("document_url"):
                         updated["document_url"] = source_ref["document_url"]
+                    if source_ref.get("notice_url"):
+                        updated["notice_url"] = source_ref["notice_url"]
+                    if source_ref.get("bidding_document_url"):
+                        updated["bidding_document_url"] = source_ref["bidding_document_url"]
                     if source_ref.get("related_documents"):
                         updated["related_documents"] = source_ref["related_documents"]
                     refs[i] = updated

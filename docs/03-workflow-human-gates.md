@@ -291,13 +291,21 @@ carries the clause or page it was read from. A point nobody can trace is not sho
 
 **The bid security amount is turned into an order-of-magnitude estimate, and labelled as one.**
 Tenders rarely publish the contract value; they publish a bid security amount and the percentage of
-the contract value it represents. Dividing one by the other gives an indicative BOQ value. The
-arithmetic is only performed when the percentage is stated **and** is tied to the same base value in
+the contract value it represents. Dividing one by the other gives an indicative BOQ value:
+
+    Estimated BOQ value = Bid-security amount ÷ Bid-security percentage
+
+The arithmetic is only performed when the percentage is stated **and** is tied to the same base value in
 the document. A percentage that belongs to liquidated damages, retention money, an advance payment
 or a performance guarantee is not a bid-security percentage, and using one of those would produce a
 confident, wrong number. Where the document does not state the percentage, or states it ambiguously,
 **nothing is assumed**: the field stays empty and the tender is flagged for a person to check. The
 estimate is always shown as indicative and is stored separately from the tender's own value.
+
+Where the percentage is stated matters as much as that it is stated. It lives in the **bidding
+document** — the instructions to bidders and the bid data sheet — and not in the tender notice that
+some portals publish alongside it. A record pointing at the notice can never carry an implied value,
+which is why the record points at the bidding document (`docs/05` §11.2.1).
 
 **The submission checklist is generated from the document, with references.** The checklist of what
 must be submitted is read out of the bidding document, and each line carries the clause and page it
