@@ -206,3 +206,72 @@ def test_a_document_carried_over_is_not_asked_for_again(client, db, auth, live_m
     wanted = documents_service.pending_document_urls(opp)
     urls = [w["url"] for w in wanted]
     assert not any(u.endswith("bidding-s1.pdf") for u in urls), urls
+
+
+def test_a_document_that_arrived_is_analysed_even_if_the_hand_over_was_cut_short(client, db, auth, live_mode):
+    """A record waiting for a document it already has is finished, not left.
+
+    A hand-over that is cut off half way through leaves the file on the
+    record and the analysis undone. Nothing would fetch that document again,
+    so the record would wait for ever.
+    """
+    from app.models import Document, DocumentChunk, Opportunity
+    from app.services import documents as documents_service
+    from app.services import workflow
+
+    opp_id = _capture_one(client, auth, "Bridge document half carried tender", "notice-h1", "bidding-h1")
+    opp = db.get(Opportunity, opp_id)
+    workflow.run_analysis(db, opp)
+    db.refresh(opp)
+
+    # The document arrived, and the request died before it was analysed.
+    documents_service.save_document(
+        db,
+        opp,
+        "bidding-h1.txt",
+        BIDDING_TEXT.encode("utf-8"),
+        source_url="https://eproc.punjab.gov.pk/BiddingDocuments/bidding-h1.pdf",
+    )
+    db.refresh(opp)
+    assert opp.documents_status == "awaiting_bridge"
+
+    pending = client.get(
+        "/api/sources/documents-pending", headers={"X-Capture-Secret": SECRET}
+    ).json()
+    # The tender notice is still wanted, but the tender itself has been
+    # analysed from the document that arrived.
+    db.expire_all()
+    opp = db.get(Opportunity, opp_id)
+    assert opp.documents_status != "awaiting_bridge"
+    assert opp.estimated_boq_value == 2_000_000
+    # The stand-in is gone, and its chunks went with it.
+    assert [d.filename for d in opp.documents] == ["bidding-h1.txt"]
+    assert db.query(DocumentChunk).filter(DocumentChunk.opportunity_id == opp_id).count() > 0
+    assert db.query(Document).filter(Document.opportunity_id == opp_id).count() == 1
+    assert [p for p in pending if p["opportunity_id"] == opp_id]
+
+
+def test_the_stand_in_goes_with_its_chunks(client, db, auth, live_mode):
+    """The chunks of a deleted document go with it.
+
+    The database the system runs on refuses a row that is deleted while
+    another still points at it, so a stand-in deleted without its chunks
+    would fail on the deployment and pass on a developer's machine.
+    """
+    from app.models import DocumentChunk, Opportunity
+    from app.services import documents as documents_service
+    from app.services import workflow
+
+    opp_id = _capture_one(client, auth, "Bridge document chunks tender", "notice-c1", "bidding-c1")
+    opp = db.get(Opportunity, opp_id)
+    workflow.run_analysis(db, opp)
+    db.refresh(opp)
+
+    summary = [d for d in opp.documents if d.filename == documents_service.SUMMARY_FILENAME]
+    assert summary, [d.filename for d in opp.documents]
+    assert db.query(DocumentChunk).filter(DocumentChunk.document_id == summary[0].id).count() > 0
+
+    assert documents_service.drop_placeholder_summary(db, opp) is True
+    assert (
+        db.query(DocumentChunk).filter(DocumentChunk.document_id == summary[0].id).count() == 0
+    )

@@ -231,7 +231,20 @@ def documents_pending(x_capture_secret: str = Header(default=""), db: Session = 
         .all()
     )
     pending = []
+    settled = 0
     for opp in rows:
+        # The document may have arrived even if the hand-over that brought it
+        # was cut off half way through. A record with a document on file and
+        # no analysis of it is finished here rather than left waiting for a
+        # document it already has.
+        if documents_service.settle(db, opp):
+            settled += 1
+            audit.record(
+                db,
+                "source.document_settled",
+                actor="capture bridge",
+                opportunity_id=opp.id,
+            )
         wanted = documents_service.pending_document_urls(opp)
         if not wanted:
             continue
@@ -243,6 +256,8 @@ def documents_pending(x_capture_secret: str = Header(default=""), db: Session = 
                 "documents": wanted,
             }
         )
+    if settled:
+        db.commit()
     return pending
 
 

@@ -328,17 +328,60 @@ def drop_placeholder_summary(db, opp) -> bool:
     The summary is a stand-in, written from what the listing already said.
     Left in place it would be read alongside the real document and dilute
     what the analysis is drawn from.
+
+    The summary's own chunks go with it. They point at the summary, and the
+    database the system runs on refuses a row that is deleted while another
+    still points at it — so a summary deleted without its chunks would fail
+    on the deployment and pass on a developer's machine, where the same
+    rule is not enforced by default.
     """
     removed = False
     for doc in list(opp.documents or []):
         if doc.filename != SUMMARY_FILENAME:
             continue
+        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
         db.delete(doc)
         removed = True
     if removed:
         db.commit()
-        db.refresh(opp)
+        # The tender's documents are read again on the next access, rather
+        # than refreshed in place: the summary that was just deleted is still
+        # in the loaded collection, and refreshing would go looking for it.
+        db.expire(opp, ["documents"])
     return removed
+
+
+def settle(db, opp) -> bool:
+    """Finish a tender whose document has arrived.
+
+    A hand-over can be cut off half way through — the request runs out of
+    time after the file has been stored but before the tender is analysed
+    again. The record is then waiting for a document it already has, and
+    nothing would fetch it again, so it would wait for ever.
+
+    So a record with a document on file and no analysis of it is finished
+    here: the stand-in is dropped, the record is marked as carrying its
+    documents, and the tender is analysed again from the documents
+    themselves.
+
+    Returns whether the record was settled.
+    """
+    from app.services import workflow
+
+    if opp.documents_status != AWAITING_BRIDGE:
+        return False
+    if not has_document_link(opp):
+        # Nothing was ever published against this tender to fetch.
+        return False
+    if not any(doc.filename != SUMMARY_FILENAME for doc in (opp.documents or [])):
+        # Only the stand-in is on file: the document has not arrived.
+        return False
+
+    drop_placeholder_summary(db, opp)
+    opp.documents_status = "uploaded"
+    db.commit()
+    workflow.reanalyze(db, opp)
+    return True
 
 
 def mark_awaiting_bridge(db, opp) -> int:

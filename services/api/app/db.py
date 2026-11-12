@@ -45,6 +45,22 @@ elif settings.database_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
+
+if settings.database_url.startswith("sqlite"):
+    # SQLite does not enforce foreign keys unless it is told to, and the
+    # deployment runs on PostgreSQL, which always does. A row deleted while
+    # another still points at it is refused by the deployment and quietly
+    # allowed here, so the two would not agree — and the difference would
+    # only ever show up in production. SQLite is therefore held to the same
+    # rule as the database the system actually runs on.
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 # Objects keep their values after a commit instead of being expired and read
 # back. The application writes a row and then reads it again in the same
 # request more often than not, and on a database that is reached over the
