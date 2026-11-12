@@ -691,6 +691,57 @@ def test_a_figure_too_small_to_be_a_bid_security_is_not_read_as_one():
     assert "no bid security amount was found" in detected["boq_estimate_note"]
 
 
+def test_a_base_phrase_split_across_table_rows_is_still_read():
+    """A tender's bidding document is mostly tables, and a table read as text
+    puts every cell on its own line. "5% of" then "estimated" then "cost" is
+    one phrase spread over three lines, and the reader has to see it as one."""
+    detected = extractor._detect_fields(
+        "Bid Security @\n5% of\nestimated\ncost.\nDuration of the Project\n"
+        "Package - A\n220,147,516/-\n11,007,376/-\n12 months\n"
+    )
+    assert detected["bid_security_percent"] == 5
+
+
+def test_the_base_is_read_whatever_the_buyer_calls_it():
+    """The wording of the base differs from buyer to buyer, but it has to be
+    the contract's worth. "2% of the estimated annual rent" and "2% of price
+    of procurement estimated by PEF" both say what to multiply; "5% of the
+    offer" is the bidder's own price and says nothing."""
+    detected = extractor._detect_fields(
+        "Bid Security in the form of CDR, Pay Order or Demand Draft amounting to 2% "
+        "of the estimated annual rent. Estimated Annual Rent: Rs. 4,500,000/-"
+    )
+    assert detected["bid_security_percent"] == 2
+
+    detected = extractor._detect_fields(
+        "Bidders must submit bid security of Rs. 99,448/- (2% of price of procurement "
+        "estimated by PEF) as per bid security clause of this document."
+    )
+    assert detected["bid_security_amount"] == 99_448
+    assert detected["bid_security_percent"] == 2
+    assert detected["estimated_boq_value"] == 4_972_400
+
+    # The bidder's own price is not the contract's worth, so it is not a base.
+    detected = extractor._detect_fields(
+        "Bid Security 5% of offer. All electronic bids must be accompanied by a scanned "
+        "bid security of 5% of the estimated price in the name of the Deputy Conservator."
+    )
+    assert detected["bid_security_percent"] == 5
+
+
+def test_the_implied_value_matches_the_estimate_the_tender_states():
+    """The point of the calculation: the tender's own figure and the figure
+    worked out from its bid security are the same number."""
+    detected = extractor._detect_fields(
+        "7 Estimated Annual Rent: Rs. 4,500,000/- 8 Bid Security (2%): Rs. 90,000/- "
+        "9 Last date for submission of bids: 18-11-2026. Bid Security in the form of "
+        "CDR, Pay Order or Demand Draft amounting to 2% of the estimated annual rent."
+    )
+    assert detected["bid_security_amount"] == 90_000
+    assert detected["bid_security_percent"] == 2
+    assert detected["estimated_boq_value"] == 4_500_000
+
+
 # ----------------------------------------------------------------------
 # 2.9  The submission checklist
 # ----------------------------------------------------------------------

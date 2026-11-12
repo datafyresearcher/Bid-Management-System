@@ -83,6 +83,8 @@ BOQ_BASE_PHRASES = (
     "estimated cost",
     "estimated value",
     "estimated boq",
+    "estimated price",
+    "estimated annual rent",
     "boq value",
     "bill of quantities",
     "contract price",
@@ -92,6 +94,18 @@ BOQ_BASE_PHRASES = (
     "price of the contract",
     "estimated amount",
     "total contract value",
+)
+
+# A base need not be one of the fixed phrases — buyers word it their own way
+# ("2% of the estimated annual rent", "2% of price of procurement estimated
+# by PEF"). What matters is that the percentage is of a *value*: the thing it
+# is taken of has to be the contract's worth. A percentage of something that
+# is not a value — "5% of the offer", which is the bidder's own price —
+# says nothing about the contract's worth, so it is not taken.
+BOQ_BASE_PATTERN = re.compile(
+    r"\bof\s+(?:the\s+|an?\s+)?(?:\w+[\s-]+){0,4}?"
+    r"(?:costs?|prices?|values?|amounts?|rents?|boqs?|bills?\s+of\s+quantit\w*|sums?)\b",
+    re.I,
 )
 
 # Other things a tender states a percentage of, which sit close enough to a
@@ -304,6 +318,19 @@ def _first_match(patterns, text, group=1):
     return None
 
 
+def _flat(text: str) -> str:
+    """The text with its line breaks flattened to single spaces.
+
+    A tender's bidding document is mostly tables, and a table read as text
+    puts every cell on its own line: "5% of" then "estimated" then "cost" are
+    three lines, not one phrase. The phrase is there and the reader cannot see
+    it. The windows a phrase is looked for in are flattened before the search,
+    while the text the offsets are taken from is left alone, so a point can
+    still be traced to the page it is printed on.
+    """
+    return re.sub(r"\s+", " ", text)
+
+
 def _bid_security_percent(text: str):
     """The share of the estimated BOQ value that the bid security represents.
 
@@ -331,13 +358,13 @@ def _bid_security_percent(text: str):
                 # else that happens to sit nearby — "liquidated damages at
                 # 0.05% of the contract price" is a percentage too, and so is
                 # "retain 5% of the contract value as retention money".
-                near = window[max(0, match.start() - 70) : match.start()].lower()
-                tail = window[match.end() : match.end() + 100].lower()
+                near = _flat(window[max(0, match.start() - 70) : match.start()]).lower()
+                tail = _flat(window[match.end() : match.end() + 100]).lower()
                 if any(other in near or other in tail for other in OTHER_PERCENTAGE_SUBJECTS):
                     continue
                 # The percentage has to be tied to a base value for it to
                 # mean anything: "2% of the estimated cost".
-                if not any(phrase in tail for phrase in BOQ_BASE_PHRASES):
+                if not any(phrase in tail for phrase in BOQ_BASE_PHRASES) and not BOQ_BASE_PATTERN.search(tail):
                     continue
                 found.setdefault(value, match.start())
     if not found:

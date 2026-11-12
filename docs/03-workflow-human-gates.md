@@ -307,6 +307,15 @@ document** — the instructions to bidders and the bid data sheet — and not in
 some portals publish alongside it. A record pointing at the notice can never carry an implied value,
 which is why the record points at the bidding document (`docs/05` §11.2.1).
 
+Reading it takes a little care, because a bidding document is mostly tables and a table read as
+text puts every cell on its own line: "5% of", then "estimated", then "cost" is one phrase spread
+over three lines. The base the percentage is taken of is also worded differently by every buyer —
+"the estimated cost", "the estimated price", "the estimated annual rent", "price of procurement
+estimated by PEF" — so what is looked for is a *value* the percentage is of, not one fixed phrase. A
+percentage of something that is not a value ("5% of the offer", which is the bidder's own price)
+says nothing about the contract's worth and is not taken. Where a tender quotes two different
+percentages against its bid security, the record still assumes nothing and asks for it to be checked.
+
 And the document has to actually be on file before any of it can be read. The Punjab portal refuses
 connections from datacenter networks, so the deployment cannot fetch that document itself; the bid
 desk's own machine does it (`docs/05` §11.2.1). Until the document arrives, the record says it is
