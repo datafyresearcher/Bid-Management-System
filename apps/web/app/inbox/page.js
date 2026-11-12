@@ -229,7 +229,10 @@ export default function InboxPage() {
                 </td>
                 <td data-label="Category">{o.category_internal}<div className="muted">{o.tender_type}</div></td>
                 <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}<div className="muted">{o.value_band}</div></td>
-                <td data-label="Deadline">{fmtDate(o.submission_deadline)}</td>
+                <td data-label="Deadline">
+                  {fmtDate(o.submission_deadline)}
+                  {!o.submission_deadline ? <div className="muted">No closing date on file</div> : null}
+                </td>
                 <td data-label="State"><span className={stateClass(o.state)}>{stateLabel(o.state)}</span></td>
                 <td data-label="">
                   <div className="row-actions">

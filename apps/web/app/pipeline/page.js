@@ -104,9 +104,20 @@ export default function PipelinePage() {
   const expired = items.filter((o) => o.deadline_status === "expired");
   const decided = items.filter((o) => o.deadline_status === "closed");
   const stillOpen = items.filter((o) => o.deadline_status === "open");
+  // A tender the portals describe without a closing date — NTDC and EPADS
+  // publish none in their feeds — cannot be told expired by any date, and it
+  // must not sit in "Still open" looking live. It is shown on its own, with
+  // what is (and is not) known about it said out loud.
+  const noDate = stillOpen.filter((o) => !o.submission_deadline);
+  const datedOpen = stillOpen.filter((o) => o.submission_deadline);
 
   if (filterIndex === FILTERS.length - 1) {
-    bucket("Still open", null, stillOpen);
+    bucket("Still open", null, datedOpen);
+    bucket(
+      "No closing date on file",
+      "The portal did not publish a closing date for these; it is read out of the bidding document once that is on file. Check the document rather than assume the tender is live.",
+      noDate
+    );
     bucket(
       "Past deadline",
       "The submission date has passed. These records stay on file and can still be opened.",
@@ -214,7 +225,11 @@ export default function PipelinePage() {
                           <td data-label="Value">{fmtMoney(o.estimated_value, o.currency)}</td>
                           <td data-label="Deadline" className={d !== null && d <= 7 ? "score-mid" : ""}>
                             {fmtDate(o.submission_deadline)}
-                            {d !== null ? <div className="muted">{expired ? "closed" : `${d}d left`}</div> : null}
+                            {o.submission_deadline ? (
+                              d !== null ? <div className="muted">{expired ? "closed" : `${d}d left`}</div> : null
+                            ) : (
+                              <div className="muted">No closing date on file</div>
+                            )}
                           </td>
                           <td data-label="Score">{o.score_total !== null && o.score_total !== undefined ? Math.round(o.score_total) : "—"}</td>
                         </tr>
