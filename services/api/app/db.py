@@ -87,10 +87,17 @@ def get_db():
 # tables, it never alters existing ones, so an upgraded database keeps the old
 # shape without these steps. Each entry maps a table to the columns it must
 # have, with the SQL type and default to apply.
+#
+# The defaults are written the way PostgreSQL writes them. A boolean column
+# cannot be given the default `0` there — the database refuses the statement
+# with a type mismatch, the column is never added, and every query that
+# selects it afterwards fails with "column does not exist". That is not a
+# warning a deployment can be left to get past: the column the code expects
+# is simply not there.
 ADDED_COLUMNS = {
     "ai_metrics": [
-        ("simulated", "BOOLEAN DEFAULT 0"),
-        ("cached", "BOOLEAN DEFAULT 0"),
+        ("simulated", "BOOLEAN DEFAULT false"),
+        ("cached", "BOOLEAN DEFAULT false"),
         ("error", "VARCHAR(200) DEFAULT ''"),
         ("attempts", "INTEGER DEFAULT 1"),
     ],
@@ -104,8 +111,8 @@ ADDED_COLUMNS = {
         ("boq_estimate_note", "VARCHAR(300) DEFAULT ''"),
     ],
     "library_documents": [
-        ("shared", "BOOLEAN DEFAULT 0"),
-        ("locked", "BOOLEAN DEFAULT 0"),
+        ("shared", "BOOLEAN DEFAULT false"),
+        ("locked", "BOOLEAN DEFAULT false"),
         ("category", "VARCHAR(80) DEFAULT 'General'"),
         ("valid_until", "VARCHAR(40) DEFAULT ''"),
     ],
