@@ -271,6 +271,18 @@ Tenders captured before this was understood kept the listing as their notice lin
 rewritten in place at start-up, from the document link already captured against each record, so a
 tender that is already on file opens its own document without waiting for the next scan.
 
+**The window moves; the portal's files do not.** A portal that publishes its whole history at once
+is read with a lookback window, because the window is what decides what is *new*. A tender
+captured while it was recent, and now older than that window, would otherwise keep whatever link it
+was captured with — and NTDC publishes no per-tender page, so that link is the tenders listing
+rather than the tender.
+
+The feed carries the path to every tender the portal has ever published, not only the recent ones,
+so the whole feed is indexed by tender id during the read and the tenders already on file are
+pointed at their own document from that index. A tender on file therefore opens the file the
+authority published for it, however old the tender is. The index costs nothing extra: the feed was
+already fetched.
+
 ### 9.3 Capture mode
 
 The registry records whether a capture came off the live portal or from a saved copy of one

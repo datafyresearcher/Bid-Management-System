@@ -94,6 +94,14 @@ class NTDCConnector(BaseConnector):
     # nothing looked broken.
     DOCUMENT_BASE = "https://ntdc.gov.pk"
 
+    def __init__(self, source):
+        super().__init__(source)
+        # Every tender the portal still publishes, indexed by its own id.
+        # Filled by parse_feed from the whole feed, so a tender that is on
+        # file can be pointed at its file even once it has aged out of the
+        # window the notices are taken from.
+        self.document_index = {}
+
     def fetch_listing(self):
         if self.fixture_mode:
             return self._from_fixture()
@@ -158,6 +166,12 @@ class NTDCConnector(BaseConnector):
         The endpoint returns every notice the organisation has ever published,
         so only the recent ones are taken and the categories that are results
         rather than opportunities are left out.
+
+        The whole feed is also indexed by native id, so a tender that is
+        already on file can be pointed at its own file even after it has
+        aged out of the window the notices are taken from. The portal keeps
+        the tender's file for years; only the window that decides what is
+        *new* moves.
         """
         from app.config import settings
         from datetime import timedelta
@@ -165,6 +179,17 @@ class NTDCConnector(BaseConnector):
         from app.services.utils import utcnow
 
         records = payload if isinstance(payload, list) else payload.get("data", [])
+
+        self.document_index = {}
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            native_id = f"ntdc-{record.get('id')}"
+            path = record.get("path") or ""
+            self.document_index[native_id] = {
+                "document_url": self.document_url(path),
+                "related_documents": self.related_documents(record),
+            }
 
         cutoff = utcnow() - timedelta(days=settings.live_lookback_days)
         buyer = self.source.name or "National Transmission & Despatch Company (NTDC)"

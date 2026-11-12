@@ -242,9 +242,12 @@ def backfill_ntdc_notice_links():
                     # can be recovered from it.
                     target = base + encode_path(ref["url"][len(uploads):])
                 else:
-                    # No file was published for this notice, so the listing is
-                    # the only place it can be seen.
-                    target = listing
+                    # No document was captured against this notice, so there
+                    # is nothing better to point at. Whatever the record
+                    # carries is left as it is: rewriting it here would throw
+                    # away what the capture knew, and choosing the listing is
+                    # the connector's job, not this one's.
+                    target = ref.get("url") or listing
                 if ref.get("url") != target:
                     ref = dict(ref)
                     ref["url"] = target
