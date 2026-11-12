@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, fmtDateTime, GATE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, fmtDateTime, STAGE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
 import BrandLoader from "../../components/Loading";
 
 const PAGE_SIZE = 50;
@@ -76,7 +76,7 @@ export default function ReviewPage() {
         method: "POST",
         body: JSON.stringify({ decision, comment: comments[gate.id] || "" }),
       });
-      setInfo(`Gate ${gate.gate} decision recorded: ${decision}`);
+      setInfo(`Stage ${gate.gate}: ${decision} recorded`);
       load();
     } catch (e) {
       setError(e.message);
@@ -90,7 +90,7 @@ export default function ReviewPage() {
   return (
     <>
       <h2 className="page-title">Review Queue</h2>
-      <p className="page-sub">Every gate decision is recorded with actor, timestamp and comment in the audit trail.</p>
+      <p className="page-sub">Every decision is recorded with who made it, when, and their comment.</p>
 
       {error ? <div className="notice err">{error}</div> : null}
       {info ? <div className="notice ok">{info}</div> : null}
@@ -119,11 +119,11 @@ export default function ReviewPage() {
         <button className="btn" onClick={load}>Refresh</button>
       </div>
 
-      {gates.length === 0 ? <p className="muted">No gates in this view.</p> : null}
+      {gates.length === 0 ? <p className="muted">No decisions in this view.</p> : null}
       {total > 0 ? (
         <div className="pager">
           <p className="muted mb-14">
-            Showing {first}–{last} of {total} gate(s).{" "}
+            Showing {first}–{last} of {total} decision(s).{" "}
             {total > PAGE_SIZE
               ? "Use the buttons below, or narrow the view by status or owner role."
               : null}
@@ -153,7 +153,7 @@ export default function ReviewPage() {
         <div className="card section-card" key={g.id}>
           <div className="section-title">
             <h3 style={{ textTransform: "none", fontSize: 14 }}>
-              <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge badge-amber"}>{GATE_LABELS[g.gate] || `G${g.gate}`}</span>{" "}
+              <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge badge-amber"}>{STAGE_LABELS[g.gate] || `Stage ${g.gate}`}</span>{" "}
               {g.title}
             </h3>
             <span className={g.status === "OVERDUE" ? "badge badge-red" : "badge"}>{g.status}</span>
@@ -170,7 +170,7 @@ export default function ReviewPage() {
             <p className={dl.urgent ? "score-low" : "muted"}>
               <strong>Tender closes {dl.label}</strong>{" "}
               {dl.days !== null ? `(${dl.countdown})` : ""}
-              {dl.urgent ? " — prioritise this gate" : ""}
+              {dl.urgent ? " — prioritise this stage" : ""}
             </p>
           ) : null}
 
@@ -178,7 +178,7 @@ export default function ReviewPage() {
             <>
               {g.inputs_snapshot && Object.keys(g.inputs_snapshot).length ? (
                 <details>
-                  <summary className="muted">Gate inputs</summary>
+                  <summary className="muted">Details</summary>
                   <pre className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{JSON.stringify(g.inputs_snapshot, null, 2)}</pre>
                 </details>
               ) : null}

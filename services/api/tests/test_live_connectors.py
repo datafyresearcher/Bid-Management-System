@@ -19,6 +19,7 @@ import pytest
 
 from app.connectors.epads_federal import EPADSFederalConnector
 from app.connectors.epms_federal import EPMSFederalConnector
+from app.connectors import ntdc as ntdc_module
 from app.connectors.ntdc import NTDCConnector
 from app.connectors.ppra_punjab import PPRAPunjabConnector
 from app.connectors.wapda import WAPDAConnector
@@ -304,7 +305,101 @@ def test_ntdc_skips_results_and_tors():
     assert not any(n["source_category"].lower() in ("evaluation results", "tors") for n in notices)
 
 
-def test_ntdc_document_links_are_under_uploads():
+def _recent_published(days_ago: int = 5) -> str:
+    """A publication date inside the connector's lookback window.
+
+    The window moves with the clock, so the date is worked out from today
+    rather than written down — otherwise the test would start failing on
+    its own a couple of months from now.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_ntdc_document_links_point_at_the_real_file():
+    """The bidding document has to be served from where the portal serves it.
+
+    The link used to be built under "/uploads", which is not a path on the
+    site. Because the site answers every unknown path with its single-page
+    application shell, the link answered 200 with an HTML page — so a bid
+    team clicking "download the bidding document" got a web page, and
+    nothing looked broken.
+    """
+    feed = [
+        {
+            "id": 4304,
+            "title": "TLC-29-2026: Construction and Completion of Civil Works",
+            "path": "/bidding/IFB_6a38d56507bf6.pdf",
+            "category_id": 3,
+            "published_on": _recent_published(),
+            "name": "IFB",
+            "ammendments": [],
+        }
+    ]
+    notices = ntdc().parse_feed(feed)
+    assert notices
+    for notice in notices:
+        url = notice["document_url"]
+        assert url == "https://ntdc.gov.pk/bidding/IFB_6a38d56507bf6.pdf", notice
+        assert "/uploads/" not in url, notice
+
+
+def test_ntdc_notice_link_is_the_tenders_listing():
+    """The site publishes no page per notice, so the notice link is the list."""
     payload = json.loads(golden("ntdc.json"))
     notices = ntdc().parse_feed(payload)
-    assert all("/uploads/" in n["url"] for n in notices)
+    for notice in notices:
+        assert notice["url"] == NTDCConnector.LISTING_URL, notice
+
+
+def test_ntdc_captures_the_clarifications_published_with_a_tender():
+    """The clarifications and amendments are kept as documents of their own.
+
+    The feed carries them against the notice they belong to. They have to
+    survive into the notice, because a clarification can move a deadline
+    and the bid team has to be able to open it.
+    """
+    feed = [
+        {
+            "id": 4304,
+            "title": "TLC-29-2026: Construction and Completion of Civil Works",
+            "path": "/bidding/IFB_6a38d56507bf6.pdf",
+            "category_id": 3,
+            "published_on": _recent_published(),
+            "name": "IFB",
+            "ammendments": [
+                {
+                    "id": 2508,
+                    "title": "Amendment No. 02",
+                    "path": "/bidding/2.1 Amendment No. 02 - Bidders_6a58b3c1659cb.pdf",
+                    "date": _recent_published(),
+                    "parent_id": 4304,
+                },
+                {
+                    "id": 2506,
+                    "title": "Amendment No. 01 & Pre-bid Clarifications No. 01",
+                    "path": "/bidding/Amendment No. 01 & Pre-bid Clarifications No.1_6a570a834ffff.pdf",
+                    "date": _recent_published(),
+                    "parent_id": 4304,
+                },
+            ],
+        }
+    ]
+    notices = ntdc().parse_feed(feed)
+    assert len(notices) == 1
+    related = notices[0]["related_documents"]
+    assert len(related) == 2
+    assert related[0]["title"] == "Amendment No. 02"
+    assert related[0]["url"] == "https://ntdc.gov.pk/bidding/2.1 Amendment No. 02 - Bidders_6a58b3c1659cb.pdf"
+    assert related[0]["kind"] == "amendment"
+    assert related[1]["kind"] == "clarification"
+    assert notices[0]["document_url"] == "https://ntdc.gov.pk/bidding/IFB_6a38d56507bf6.pdf"
+
+
+def test_ntdc_classifies_the_kind_of_related_document():
+    assert ntdc_module.classify_related("Pre-bid Clarifications No. 02") == "clarification"
+    assert ntdc_module.classify_related("Amendment No. 03") == "amendment"
+    assert ntdc_module.classify_related("Addendum 1") == "amendment"
+    assert ntdc_module.classify_related("Corrigendum") == "corrigendum"
+    assert ntdc_module.classify_related("Something else") == "related"

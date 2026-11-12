@@ -10,6 +10,7 @@ from app.db import get_db
 from app.models import Opportunity, User
 from app.security import get_current_user, require_roles
 from app.serializers import opportunity_brief, opportunity_detail, outcome as outcome_serializer
+from app.serializers import DECIDED_STATES
 from app.services import audit, documents, scorer, submission, workflow
 from app.services.utils import detect_currency, parse_date, source_id_for_code, utcnow, value_band
 
@@ -52,6 +53,11 @@ class ManualIn(BaseModel):
     source_label: str = "Manual entry"
 
 
+class ChecklistIn(BaseModel):
+    index: int
+    status: str = "pending"
+
+
 @router.get("")
 def list_opportunities(
     state: str = "",
@@ -60,11 +66,20 @@ def list_opportunities(
     area: str = "",
     min_score: float | None = None,
     sort: str = "created",
+    deadline: str = "",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """The tenders on file.
+
+    `deadline` narrows the list by whether the bidding window is still open:
+    `open` for the tenders that can still be bid, `expired` for the ones
+    whose submission date has passed, and `all` (the default) for both.
+    A tender whose deadline has passed is still on file and still reachable
+    by its own link — it is only kept out of the working list.
+    """
     query = select(Opportunity)
     if state:
         states = [s.strip().upper() for s in state.split(",") if s.strip()]
@@ -79,6 +94,22 @@ def list_opportunities(
         query = query.where(Opportunity.area == area)
     if min_score is not None:
         query = query.where(Opportunity.score_total >= min_score)
+
+    bucket = (deadline or "").strip().lower()
+    if bucket == "open":
+        query = query.where(
+            Opportunity.state.notin_(list(DECIDED_STATES)),
+            or_(
+                Opportunity.submission_deadline == None,  # noqa: E711
+                Opportunity.submission_deadline > utcnow(),
+            ),
+        )
+    elif bucket == "expired":
+        query = query.where(
+            Opportunity.state.notin_(list(DECIDED_STATES)),
+            Opportunity.submission_deadline != None,  # noqa: E711
+            Opportunity.submission_deadline <= utcnow(),
+        )
 
     total = db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
     if sort == "deadline":
@@ -242,3 +273,49 @@ def analyze(opp_id: int, user: User = Depends(require_roles("bid_manager", "prop
         raise HTTPException(status_code=404, detail="Opportunity not found")
     result = workflow.reanalyze(db, opp)
     return result
+
+
+@router.get("/{opp_id}/checklist")
+def get_checklist(opp_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The list of things this tender asks the bidder to submit."""
+    opp = db.get(Opportunity, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    return {"checklist": opp.checklist or []}
+
+
+@router.put("/{opp_id}/checklist")
+def update_checklist(
+    opp_id: int,
+    payload: ChecklistIn,
+    user: User = Depends(require_roles("bid_manager", "proposal_engineer")),
+    db: Session = Depends(get_db),
+):
+    """Mark one item of the submission checklist.
+
+    The bid team works through the list and marks each item complete,
+    pending, or not applicable. The mark is kept against the item itself,
+    so re-running the analysis does not throw it away.
+    """
+    from app.services import checklist as checklist_service
+
+    opp = db.get(Opportunity, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    if payload.status not in checklist_service.STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status must be one of: {', '.join(checklist_service.STATUSES)}",
+        )
+    try:
+        items = checklist_service.set_status(db, opp, payload.index, payload.status)
+    except IndexError:
+        raise HTTPException(status_code=400, detail="Invalid checklist index")
+    audit.record(
+        db,
+        "opportunity.checklist_updated",
+        actor=user.name,
+        opportunity_id=opp.id,
+        detail={"index": payload.index, "status": payload.status},
+    )
+    return {"checklist": items}

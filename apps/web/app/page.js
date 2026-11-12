@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, GATE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, fmtDate, fmtDateTime, fmtMoney, STAGE_LABELS, getUser, severityClass, slaCountdown, slaIsOverdue, stateClass, urlHost, urlHostPath } from "../lib/api";
 import SourceTag, { sourceHealthClass, sourceLink, sourceName, tierClass } from "../components/SourceTag";
 import BrandLoader from "../components/Loading";
 
@@ -129,7 +129,7 @@ export default function DashboardPage() {
   return (
     <>
       <h2 className="page-title">Dashboard</h2>
-      <p className="page-sub">Live view of discovery, screening and gate activity.</p>
+      <p className="page-sub">Live view of discovery, screening and the decisions waiting on us.</p>
 
       <div className={`notice ${banner.tone} src-banner`}>
         <strong>Where this data comes from.</strong>{" "}
@@ -143,7 +143,7 @@ export default function DashboardPage() {
           <div className="metric">{activeCount}</div>
         </div>
         <div className="card">
-          <h3>Pending gates</h3>
+          <h3>Decisions waiting</h3>
           <div className="metric">{data.pending_gates_total}</div>
         </div>
         <div className="card">
@@ -159,19 +159,19 @@ export default function DashboardPage() {
       <div className="grid cols-2">
         <div className="card">
           <div className="section-title">
-            <h3>Your gate queue</h3>
+            <h3>Your decisions</h3>
             <Link href="/review" className="btn small">
               Open review queue{data.pending_gates_total ? ` (${data.pending_gates_total})` : ""}
             </Link>
           </div>
           {data.pending_gates.length === 0 ? (
-            <p className="muted">No pending gates for your role.</p>
+            <p className="muted">No decisions waiting for your role.</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Gate</th>
+                    <th>Stage</th>
                     <th>Opportunity</th>
                     <th>Tender closes</th>
                     <th>Review SLA</th>
@@ -183,7 +183,7 @@ export default function DashboardPage() {
                     const dl = deadlineInfo(g.opportunity?.submission_deadline);
                     return (
                       <tr key={g.id}>
-                        <td data-label="Gate"><span className="badge badge-amber">{GATE_LABELS[g.gate] || `G${g.gate}`}</span></td>
+                        <td data-label="Stage"><span className="badge badge-amber">{STAGE_LABELS[g.gate] || `Stage ${g.gate}`}</span></td>
                         <td data-label="Opportunity">
                           <Link href={`/opportunities/${g.opportunity_id}`}>
                             {(g.opportunity && g.opportunity.title) ? g.opportunity.title.slice(0, 70) : `#${g.opportunity_id}`}
@@ -412,8 +412,8 @@ export default function DashboardPage() {
             </dd>
             <dt>Scores recorded</dt><dd>{data.ai_quality.scores_total}</dd>
             <dt>Screening overrides</dt><dd>{data.ai_quality.screening_overrides} ({Math.round((data.ai_quality.override_rate || 0) * 100)}%)</dd>
-            <dt>Gate approvals</dt><dd>{data.ai_quality.gate_approvals}</dd>
-            <dt>Gate returns</dt><dd>{data.ai_quality.gate_returns}</dd>
+            <dt>Stage approvals</dt><dd>{data.ai_quality.gate_approvals}</dd>
+            <dt>Stage returns</dt><dd>{data.ai_quality.gate_returns}</dd>
             <dt>Approval rate</dt><dd>{Math.round((data.ai_quality.gate_approval_rate || 0) * 100)}%</dd>
             <dt>Bids decided</dt><dd>{data.ai_quality.outcomes_total}</dd>
             <dt>Win rate</dt>

@@ -20,12 +20,25 @@
 
 This pack is the complete design for an AI-powered Bid Management System that automates the
 opportunity-to-submission lifecycle for infrastructure contractors: **search procurement sources,
-download and analyse tenders, run human review gates, prepare proposals grounded in the company
+download and analyse tenders, run human review stages, prepare proposals grounded in the company
 knowledge base, track unpublished leads, and support compliant submission.**
 
 It is written to be handed to a **Business Domain Expert** (tendering/procurement professional)
 for validation before any production code is written. Every domain assumption is collected in
 `docs/10` with an explicit "validate?" question.
+
+## What the system does
+
+| Capability | What the user sees |
+|---|---|
+| **Discovery** | Live reads of PPRA Punjab, EPMS Federal, EPADS, NTDC and WAPDA — with the capture mode and the source of every record shown on screen |
+| **Documents** | The bidding document itself, downloaded and opened, plus every **clarification, amendment and addendum** the buyer published against the tender — each kept and openable as its own entry |
+| **Bid fit assessment** | The summary in fixed sections — scope of work, experience requirements, financial requirements, bid security, submission deadline, key personnel, other important conditions — each point carrying the clause or page it came from |
+| **Indicative value** | An estimated contract value derived from the bid security amount and its stated percentage, shown separately from the tender's own value and always labelled indicative. Where the document does not state the percentage, nothing is assumed and the tender is flagged for a person to check |
+| **Submission checklist** | Generated from the bidding document, with clause and page references, marked pending / complete / not applicable by the team, and carried into the submission pack |
+| **Shared documents** | The company documents that travel with every proposal (certificates, financial predictions, credit line), held once in the Knowledge Base, some locked as master copies, and selected per proposal |
+| **Pipeline** | Active bids by stage, with **past-deadline tenders held in their own section** and closed bids split from them |
+| **Submission** | An assembled pack — proposal, BOQ skeleton, checklist, shared documents — with the portal deep link and fee/challan reminders, uploaded by a person |
 
 ## Document index
 
@@ -34,7 +47,7 @@ for validation before any production code is written. Every domain assumption is
 | 00 | [Executive Summary](docs/00-executive-summary.md) | One-page problem, solution, value case, decisions needed | Management, client |
 | 01 | [Research & Lessons Learned](docs/01-research-lessons-learned.md) | International platform research, Pakistan & KSA market study, AHTE profile | All |
 | 02 | [Solution Architecture](docs/02-solution-architecture.md) | Layered architecture, components, LLM abstraction, security, deployment | Engineering, technical reviewer |
-| 03 | [Workflow & Human Gates](docs/03-workflow-human-gates.md) | End-to-end state machine, 5 human review gates, automation matrix, dashboards | Domain expert, engineering |
+| 03 | [Workflow & Review Stages](docs/03-workflow-human-gates.md) | End-to-end state machine, 5 human review stages, automation matrix, dashboards | Domain expert, engineering |
 | 04 | [Data Model & Knowledge Base](docs/04-data-model-and-knowledge-base.md) | Canonical opportunity model, company knowledge base, evidence linking | Engineering, domain expert |
 | 05 | [Pakistan Sources & Connectors](docs/05-pakistan-sources-and-connectors.md) | Source matrix (PPRA Punjab, EPADS, NTDC/WAPDA, newspapers), connector design, admin registry | Engineering, domain expert |
 | 06 | [Unpublished Leads Pipeline](docs/06-unpublished-leads-pipeline.md) | Pre-publication lead sources (annual plans, ADB pipelines, PSDP/ADP), lead lifecycle | Domain expert, management |
@@ -71,7 +84,7 @@ Feedback is captured against the **Assumptions Register (A-register)** and **Que
 
 The system ships in **fixtures mode** out of the box: a curated set of tender listings + tender
 documents (modeled on PPRA Punjab, EPMS Federal, NTDC/WAPDA) is loaded from `fixtures/`, so the
-full pipeline — discovery → analysis → 5 human gates → proposal drafting → submission pack — runs
+full pipeline — discovery → analysis → 5 human stages → proposal drafting → submission pack — runs
 end-to-end without any external portal access or LLM key.
 
 ### Live portal reading
@@ -160,17 +173,23 @@ accounts appear only when the web app is built with
 
 ### Suggested demo walkthrough
 
-1. Log in as **bm@ahte.local** → Dashboard shows new opportunities + pending gates.
+1. Log in as **bm@ahte.local** → Dashboard shows new opportunities + pending stages.
 2. Open **Inbox** → the seeded PPRA Punjab listings; open the GSS substation tender (score ≈ 68).
-3. **Bid room → Analysis** → factor scores, risk flags, recommendation; optionally re-run analysis.
-4. **Review queue** → approve **Gate 1 (Go/No-Go)**.
-5. Continue as **engineer@ahte.local**: confirm scope (G2), approve technical (G3) after KB-grounded
+3. **Bid room → Overview** → the bid fit assessment in plain sections (scope, experience, financial
+   requirements, bid security, deadline, key personnel, other conditions), each point carrying the
+   clause or page it came from; risk flags and the recommendation; optionally re-run the analysis.
+4. **Review queue** → approve **Stage 1 (Go/No-Go)**.
+5. Continue as **engineer@ahte.local**: confirm scope (S2), approve technical (S3) after KB-grounded
    proposal sections are generated.
-6. As **mgmt@ahte.local**: approve commercial (G4) → Gate 5 submission checklist is opened.
+6. As **mgmt@ahte.local**: approve commercial (S4) → the **submission checklist** opens, generated
+   from the bidding document with clause and page references; mark items off as they are prepared.
 7. As **bm@ahte.local**: mark the bid **Submitted**, then record the outcome (Won/Lost) — feedback
    flows into the AI-quality metrics and KB gap report.
-8. Check **Leads** (pre-publication signals), **Knowledge Base** (profile/projects/certificates/…),
+8. Check **Leads** (pre-publication signals), **Knowledge Base** (profile/projects/certificates/…,
+   and **Shared documents** — the company documents that travel with every proposal),
    and **Admin** (users, category mappings, AI quality, audit log CSV export).
+9. Open **Pipeline** → past-deadline tenders sit in their own section, out of the active pipeline,
+   and the **Everything** view splits into still open / past deadline / closed.
 
 ### LLM configuration
 
@@ -241,7 +260,7 @@ from discovery through every gate to a Won outcome over the HTTP API, and the
 **gold-set accuracy regression test**.
 
 There is also a **live smoke test** that exercises the running system over
-HTTP — login, dashboard, all five gates, submission, outcome, AI quality and
+HTTP — login, dashboard, all five stages, submission, outcome, AI quality and
 the gold set:
 
 ```bash
@@ -374,7 +393,8 @@ code out of the image.
 
 See the EN-UR glossary in `docs/10-domain-expert-review-pack.md#glossary`.
 Core terms used throughout: **Opportunity** (a published tender tracked by the system),
-**Lead** (a pre-publication signal), **Gate** (a mandatory human review checkpoint),
+**Lead** (a pre-publication signal), **Stage** (a mandatory human review checkpoint — called
+*Gate* internally in the workflow states `GATE1`…`GATE5` and in the `/api/gates` routes),
 **KB** (Company Knowledge Base), **Connector** (software adapter for one procurement source).
 
 ## Repository layout
@@ -391,9 +411,10 @@ BID Management System/
 │   │   ├── main.py            ← app factory, CORS, scheduler hook
 │   │   ├── config.py  db.py  models.py  security.py  serializers.py
 │   │   ├── routers/           ← auth, dashboard, opportunities, gates, leads, kb, sources, admin, proposals, cron
-│   │   ├── services/          ← workflow (state machine + gates), scorer, extractor, risk,
+│   │   ├── services/          ← workflow (state machine + stages), scorer, extractor, risk,
 │   │   │                        documents, drafter, submission, leads, normalizer, jobs, audit,
-│   │   │                        digest + emailer (the executive brief), risk_rules, evaluation, ai_quality…
+│   │   │                        digest + emailer (the executive brief), risk_rules, evaluation, ai_quality,
+│   │   │                        bid_summary, checklist, shared_documents…
 │   │   ├── connectors/        ← source adapters (PPRA Punjab, EPMS Federal, fixture JSON, email inbox)
 │   │   └── llm/               ← provider abstraction + prompts + schemas + deterministic engine
 │   ├── goldset/               ← labelled tender documents + cases.json (accuracy ground truth)

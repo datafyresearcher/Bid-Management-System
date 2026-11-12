@@ -116,6 +116,12 @@ class Opportunity(Base):
     qualification_thresholds = Column(JSON)
     bid_security_amount = Column(Float)
     bid_security_form = Column(String(200), default="")
+    # The share of the estimated BOQ value that the bid security represents,
+    # and the value implied by it. The percentage is only stored when the
+    # tender document actually states one; the note says so when it does not.
+    bid_security_percent = Column(Float)
+    estimated_boq_value = Column(Float)
+    boq_estimate_note = Column(String(300), default="")
     tender_fee = Column(Float)
     notice_status = Column(String(40), default="Published")
     state = Column(String(40), default="NEW", index=True)
@@ -128,6 +134,10 @@ class Opportunity(Base):
     score_total = Column(Float)
     hard_gate_result = Column(JSON)
     ai_rationale = Column(Text, default="")
+    # The same assessment, broken into labelled sections (scope of work,
+    # experience, money, bid security, deadline, key personnel, other
+    # conditions) so a reader can find the one line they need.
+    bid_summary = Column(JSON)
     ai_confidence = Column(Float)
     extraction_grade = Column(String(20), default="")
     documents_status = Column(String(40), default="none")
@@ -443,6 +453,20 @@ class LibraryDocument(Base):
     file_path = Column(String(600), default="")
     content_text = Column(Text, default="")
     approved = Column(Boolean, default=False)
+    # A shared document is one the bid team attaches to every proposal it
+    # writes — the PEC certificate, the procurement forms, the financial
+    # predictions, the credit line. It is kept once, here, instead of being
+    # uploaded again for each tender. A document that is only reference
+    # material — a policy, a procedure — is not shared.
+    shared = Column(Boolean, default=False)
+    # A locked shared document is the master copy. It is edited and deleted
+    # from the knowledge base only, so that a proposal can never be built on
+    # a document somebody changed on the way past.
+    locked = Column(Boolean, default=False)
+    # Which family of evidence this is, so the bid team can tell a licence
+    # from a form from a financial statement at a glance.
+    category = Column(String(80), default="General")
+    valid_until = Column(String(40), default="")
     created_at = Column(DateTime, default=now)
 
 
@@ -452,6 +476,10 @@ class Proposal(Base):
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, unique=True)
     status = Column(String(30), default="DRAFT")
     version = Column(Integer, default=1)
+    # The shared knowledge-base documents this proposal carries. The bid team
+    # ticks and unticks these per tender; the documents themselves stay in the
+    # knowledge base and are not copied into the proposal.
+    included_kb_docs = Column(JSON, default=list)
     created_at = Column(DateTime, default=now)
     updated_at = Column(DateTime, default=now, onupdate=now)
     sections = relationship("ProposalSection", backref="proposal", cascade="all, delete-orphan")

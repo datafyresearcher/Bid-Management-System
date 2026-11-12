@@ -34,6 +34,26 @@ def extract_reference(title: str) -> str:
     return ""
 
 
+# The families of document a buyer publishes against a tender. The title
+# NTDC gives the file says which family it is, and the bid team needs to know
+# whether they are looking at a change to the scope or a question and answer.
+RELATED_KINDS = [
+    ("clarification", ("clarification", "clarifications", "query", "queries", "q&a", "pre-bid", "prebid", "pre bid")),
+    ("amendment", ("amendment", "amendments", "addendum", "addenda")),
+    ("corrigendum", ("corrigendum", "corrigenda", "revision", "revised")),
+    ("evaluation", ("evaluation", "evalution", "result", "award")),
+]
+
+
+def classify_related(title: str) -> str:
+    """Which family of document a related file belongs to."""
+    text = (title or "").lower()
+    for kind, keywords in RELATED_KINDS:
+        if any(keyword in text for keyword in keywords):
+            return kind
+    return "related"
+
+
 class NTDCConnector(BaseConnector):
     adapter = "ntdc"
     label = "NTDC tender notices (public JSON feed)"
@@ -41,8 +61,21 @@ class NTDCConnector(BaseConnector):
     # The public feed behind the site's tender page. The page itself is an
     # Angular shell with no markup to read; this is where the notices live.
     API_URL = "https://ntdc.gov.pk/ntdc/api/tenders"
+    # The tenders listing a reader can open and search. The site is a
+    # single-page application, so this path is a route in its bundle rather
+    # than a server-rendered page — but it is the real page, and it is where
+    # a person goes to look for a tender by its reference.
+    LISTING_URL = "https://ntdc.gov.pk/tendors"
     # Where a notice document is served from.
-    DOCUMENT_BASE = "https://ntdc.gov.pk/uploads"
+    #
+    # The feed returns a site-root path such as "/bidding/IFB ....pdf", and
+    # the file is served from the site root itself. It used to be read as
+    # living under "/uploads", which is wrong: that path does not exist, and
+    # because the site answers every unknown path with its single-page
+    # application shell, the link answered 200 with an HTML page. A bid
+    # team clicking it got a web page rather than the bidding document, and
+    # nothing looked broken.
+    DOCUMENT_BASE = "https://ntdc.gov.pk"
 
     def fetch_listing(self):
         if self.fixture_mode:
@@ -63,7 +96,9 @@ class NTDCConnector(BaseConnector):
             notices.append(
                 {
                     "native_id": item.get("native_id") or item.get("id") or "",
-                    "url": item.get("url", self.base_url),
+                    "url": item.get("url", self.LISTING_URL),
+                    "document_url": item.get("document_url", ""),
+                    "related_documents": item.get("related_documents", []) or [],
                     "title": item.get("title", ""),
                     "buyer_name": item.get("buyer_name", ""),
                     "buyer_ref": item.get("buyer_ref", ""),
@@ -123,17 +158,25 @@ class NTDCConnector(BaseConnector):
 
             title = (record.get("title") or "").strip()
             document = record.get("path") or ""
-            amendments = record.get("ammendments") or []
+            related = self.related_documents(record)
             description_parts = []
-            if amendments:
-                names = [a.get("title") for a in amendments if a.get("title")]
+            if related:
+                names = [r.get("title") for r in related if r.get("title")]
                 if names:
                     description_parts.append("Amendments: " + "; ".join(names[:4]))
 
             notices.append(
                 {
                     "native_id": f"ntdc-{record.get('id')}",
-                    "url": self.document_url(document),
+                    # The site publishes no page per notice, so the notice link
+                    # is the tenders listing the reader searches by reference.
+                    "url": self.LISTING_URL,
+                    # The bidding document itself, which is what the bid team
+                    # actually needs to open.
+                    "document_url": self.document_url(document),
+                    # The clarifications, amendments and addenda the buyer
+                    # published against this tender.
+                    "related_documents": related,
                     "title": title,
                     "buyer_name": buyer,
                     "buyer_ref": extract_reference(title) or f"NTDC-{record.get('id')}",
@@ -144,7 +187,7 @@ class NTDCConnector(BaseConnector):
                     "estimated_value": None,
                     "published_at": published,
                     # NTDC does not publish a closing date on the feed. The
-                    # deadline comes out of the notice document at Gate 2.
+                    # deadline comes out of the notice document at Stage 2.
                     "submission_deadline": None,
                     "opening_at": None,
                     "description": " ".join(description_parts),
@@ -152,11 +195,94 @@ class NTDCConnector(BaseConnector):
             )
         return notices
 
+    def related_documents(self, record: dict) -> list:
+        """The clarifications, amendments and addenda for one notice.
+
+        The feed carries them against the notice they belong to, each with
+        its own title, file and date. They are kept as structured entries
+        rather than being flattened into the description, because the bid
+        team has to be able to open each one — an amendment that changes a
+        deadline is not the same as a site notice attached to a tender.
+        """
+        out = []
+        for item in record.get("ammendments") or []:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path") or ""
+            if not path:
+                continue
+            title = (item.get("title") or "").strip()
+            out.append(
+                {
+                    "title": title or "Amendment",
+                    "url": self.document_url(path),
+                    "date": item.get("date") or "",
+                    "kind": classify_related(title),
+                    "source_id": item.get("id"),
+                }
+            )
+        return out
+
+    def fetch_documents(self, native_id, ref=None):
+        """The bidding document, and every clarification published with it.
+
+        The document link is kept on the stored reference, so the tender
+        record can always point at the file on the authority's own site even
+        when the download itself is not possible.
+        """
+        if not native_id:
+            return None
+
+        if self.fixture_mode:
+            return self._documents_from_fixture(native_id)
+
+        ref = ref or {}
+        documents = []
+
+        document_url = ref.get("document_url") or ""
+        if document_url:
+            fetched = self.download_document(document_url)
+            if fetched:
+                filename, content = fetched
+                documents.append((filename, content))
+
+        for related in ref.get("related_documents") or []:
+            if not isinstance(related, dict):
+                continue
+            url = related.get("url") or ""
+            if not url:
+                continue
+            fetched = self.download_document(url)
+            if fetched:
+                filename, content = fetched
+                documents.append((filename, content))
+
+        return documents or None
+
+    def _documents_from_fixture(self, native_id: str):
+        """The saved capture of the notice's documents."""
+        path = self.fixture_path("documents.json")
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        docs = payload.get(native_id)
+        if not docs:
+            return None
+        out = []
+        for doc in docs:
+            filename = doc.get("filename") or f"{native_id}.txt"
+            content = doc.get("content") or ""
+            out.append((filename, content.encode("utf-8")))
+        return out or None
+
     def document_url(self, path: str) -> str:
         """Where a notice document is served from.
 
         The feed returns a site-root path such as "/bidding/IFB ....pdf"; the
-        documents themselves live under the site's uploads directory.
+        documents are served from the site root itself.
         """
         if not path:
             return self.DOCUMENT_BASE

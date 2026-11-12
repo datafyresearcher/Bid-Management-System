@@ -82,6 +82,19 @@ ADDED_COLUMNS = {
         ("ai_confidence", "FLOAT"),
         ("extraction_grade", "VARCHAR(20) DEFAULT ''"),
         ("source_id", "INTEGER"),
+        ("bid_summary", "JSON"),
+        ("bid_security_percent", "FLOAT"),
+        ("estimated_boq_value", "FLOAT"),
+        ("boq_estimate_note", "VARCHAR(300) DEFAULT ''"),
+    ],
+    "library_documents": [
+        ("shared", "BOOLEAN DEFAULT 0"),
+        ("locked", "BOOLEAN DEFAULT 0"),
+        ("category", "VARCHAR(80) DEFAULT 'General'"),
+        ("valid_until", "VARCHAR(40) DEFAULT ''"),
+    ],
+    "proposals": [
+        ("included_kb_docs", "JSON"),
     ],
     "sources": [
         ("authority", "VARCHAR(250) DEFAULT ''"),

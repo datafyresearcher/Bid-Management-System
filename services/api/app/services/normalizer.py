@@ -288,6 +288,10 @@ def _normalize_one(db, source, notice: dict, lookup=None):
         # portal states one, and the notice document itself.
         "reference": notice.get("portal_reference") or notice.get("buyer_ref", ""),
         "document_url": notice.get("document_url", ""),
+        # The clarifications, amendments and addenda the buyer published
+        # against this tender. They are kept per notice so the record can
+        # offer every one of them, not only the first.
+        "related_documents": notice.get("related_documents", []) or [],
         # Whether this record came off the live portal or out of a saved
         # capture of one, so the dashboard can tell the two apart.
         "mode": "saved-capture" if settings.fixtures else "live",
@@ -306,9 +310,20 @@ def _normalize_one(db, source, notice: dict, lookup=None):
         for i, r in enumerate(refs):
             if r.get("source_code") == source.code and r.get("native_id") == source_ref["native_id"]:
                 # Same notice seen again. Keep the stored reference current —
-                # portals move pages and the canonical URL changes over time.
-                if source_ref.get("url") and r.get("url") != source_ref["url"] and not keep_corrigendum:
-                    refs[i] = {**r, "url": source_ref["url"]}
+                # portals move pages and the canonical URL changes over time,
+                # and a buyer publishes further clarifications against a
+                # tender that is already on file. A value the new capture
+                # does not carry is left as it was, so a sparse re-read
+                # cannot wipe a document link that was captured earlier.
+                if not keep_corrigendum:
+                    updated = dict(r)
+                    if source_ref.get("url"):
+                        updated["url"] = source_ref["url"]
+                    if source_ref.get("document_url"):
+                        updated["document_url"] = source_ref["document_url"]
+                    if source_ref.get("related_documents"):
+                        updated["related_documents"] = source_ref["related_documents"]
+                    refs[i] = updated
                 matched = True
                 break
         if not matched:

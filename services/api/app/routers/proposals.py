@@ -7,7 +7,7 @@ from app.db import get_db
 from app.models import Opportunity, Proposal, ProposalSection, SubmissionRecord, User
 from app.security import get_current_user, require_roles
 from app.serializers import proposal as proposal_serializer, submission as submission_serializer
-from app.services import drafter, submission
+from app.services import audit, drafter, submission
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
 
@@ -85,3 +85,53 @@ def update_checklist(opp_id: int, payload: ChecklistIn, user: User = Depends(req
     record.checklist = entries
     db.commit()
     return submission_serializer(record)
+
+
+class SharedDocIn(BaseModel):
+    id: int
+    included: bool = True
+
+
+@router.get("/{opp_id}/knowledge-documents")
+def get_shared_documents(opp_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The shared documents this proposal carries.
+
+    This is the step where the bid team says which of the shared evidence
+    goes into this particular proposal, so that the documents it does not
+    need are not carried into it.
+    """
+    from app.services import shared_documents
+
+    opp = db.get(Opportunity, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    return {"documents": shared_documents.selection_for(db, opp)}
+
+
+@router.put("/{opp_id}/knowledge-documents")
+def set_shared_document(
+    opp_id: int,
+    payload: SharedDocIn,
+    user: User = Depends(require_roles("bid_manager", "proposal_engineer")),
+    db: Session = Depends(get_db),
+):
+    """Tick or untick a shared document for this proposal."""
+    from app.services import shared_documents
+
+    opp = db.get(Opportunity, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    try:
+        documents = shared_documents.set_included(db, opp, payload.id, payload.included)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Shared document not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    audit.record(
+        db,
+        "proposal.shared_document_set",
+        actor=user.name,
+        opportunity_id=opp.id,
+        detail={"document_id": payload.id, "included": payload.included},
+    )
+    return {"documents": documents}

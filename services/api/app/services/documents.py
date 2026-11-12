@@ -15,10 +15,35 @@ DOC_TYPE_KEYWORDS = [
     ("Specs", ["spec", "technical provision", "special provision"]),
     ("Forms", ["form", "appendices", "appendix"]),
     ("Drawings", ["drawing", "layout", "single line", "sld"]),
+    # A buyer publishes changes to a tender against the tender itself. They
+    # are not part of the bidding document, and a reader has to be able to
+    # tell them apart at a glance — an amendment can move the deadline.
+    ("Clarification", ["clarification", "clarifications", "pre-bid", "prebid", "q&a", "queries"]),
+    ("Amendment", ["amendment", "addendum", "addenda"]),
+    ("Corrigendum", ["corrigendum", "corrigenda", "revision", "revised"]),
 ]
 
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
+
+# Pages are separated by a form feed, so that a point taken from a document
+# can be traced to the page it is printed on. A bid manager checking a
+# clause needs to be able to turn to that page.
+PAGE_BREAK = "\n\f\n"
+
+
+def page_count(text: str) -> int:
+    """How many pages a document's text holds."""
+    if not text:
+        return 0
+    return text.count("\f") + 1
+
+
+def page_of_offset(text: str, offset: int) -> int:
+    """The page an offset falls on, counted from one."""
+    if not text or offset < 0:
+        return 1
+    return text.count("\f", 0, offset) + 1
 
 
 def classify_doc(filename: str) -> str:
@@ -36,12 +61,12 @@ def extract_text(filename: str, content: bytes) -> str:
             from pypdf import PdfReader
 
             reader = PdfReader(io.BytesIO(content))
-            return "\n".join((page.extract_text() or "") for page in reader.pages)[:400_000]
+            return PAGE_BREAK.join((page.extract_text() or "") for page in reader.pages)[:400_000]
         if name.endswith(".docx"):
             from docx import Document as DocxDocument
 
             doc = DocxDocument(io.BytesIO(content))
-            return "\n".join(p.text for p in doc.paragraphs)[:400_000]
+            return PAGE_BREAK.join(p.text for p in doc.paragraphs)[:400_000]
         if name.endswith((".html", ".htm")):
             from bs4 import BeautifulSoup
 
@@ -79,6 +104,7 @@ def save_document(db, opp, filename: str, content: bytes) -> Document:
         doc_type=classify_doc(filename),
         file_path=str(path),
         size=len(content),
+        pages=page_count(text),
         parsed=not text.startswith("[PARSE_ERROR]"),
         parse_status="" if not text.startswith("[PARSE_ERROR]") else text[:200],
         content_text=text,
@@ -118,10 +144,10 @@ def fetch_for_opportunity(db, opp) -> int:
         if not connector:
             continue
         native_id = ref.get("native_id") or ""
-        documents = connector.fetch_documents(native_id, ref=ref)
-        if documents is None:
+        fetched_docs = connector.fetch_documents(native_id, ref=ref)
+        if fetched_docs is None:
             continue
-        for filename, content in documents:
+        for filename, content in fetched_docs:
             if len(content) > 50 * 1024 * 1024:
                 continue
             save_document(db, opp, filename, content)
@@ -134,9 +160,75 @@ def fetch_for_opportunity(db, opp) -> int:
         )
         save_document(db, opp, "notice_summary.txt", fallback.encode("utf-8"))
         fetched = 1
-    opp.documents_status = "fetched" if fetched else opp.documents_status
+
+    # Whether the file itself was retrieved or not, the record has to say
+    # where the bidding document lives. A tender whose document could not be
+    # downloaded is still a tender the bid team has to open, so the link is
+    # kept on the record and shown as a download link.
+    if has_document_link(opp):
+        opp.documents_status = "fetched" if fetched else "link_only"
+    elif fetched:
+        opp.documents_status = "fetched"
     db.commit()
     return fetched
+
+
+def has_document_link(opp) -> bool:
+    """Whether the record points at a bidding document on the portal.
+
+    The link is the fallback when the file cannot be downloaded, so it is
+    kept whatever happens to the download.
+    """
+    for ref in opp.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        if ref.get("document_url"):
+            return True
+        for related in ref.get("related_documents") or []:
+            if isinstance(related, dict) and related.get("url"):
+                return True
+    return False
+
+
+def related_documents(opp) -> list:
+    """Every related document the buyer published against this tender.
+
+    Deduplicated across the notices the record was captured from, because a
+    tender can be seen on more than one of them and a reader must not be
+    offered the same clarification twice.
+    """
+    seen = set()
+    out = []
+    for ref in opp.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        for related in ref.get("related_documents") or []:
+            if not isinstance(related, dict):
+                continue
+            url = related.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(
+                {
+                    "title": related.get("title") or "Related document",
+                    "url": url,
+                    "date": related.get("date") or "",
+                    "kind": related.get("kind") or "related",
+                }
+            )
+    return out
+
+
+def document_link(opp) -> str:
+    """The direct link to the bidding document on the authority's site."""
+    for ref in opp.source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        url = ref.get("document_url") or ""
+        if url:
+            return url
+    return ""
 
 
 def search_chunks(db, opportunity_id: int, query: str, limit: int = 5):

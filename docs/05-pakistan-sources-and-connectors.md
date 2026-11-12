@@ -223,7 +223,35 @@ per-notice URL, link to the listing page with the reference applied as a filter 
 The captured reference number is always shown next to the link, so a reader can find the notice
 whether or not the filtered URL resolves.
 
-### 9.2 Capture mode
+### 9.2 Where the bidding documents live
+
+A notice that lists the tender is not the same thing as the bidding document the bid team has to
+work from. Where an authority publishes the document itself, the system keeps a link to it on the
+record and downloads it when it can.
+
+**NTDC publishes its documents from the site root.** The feed returns a path such as
+`/bidding/IFB_6a38d56507bf6.pdf`, and the file is served from
+`https://ntdc.gov.pk/bidding/IFB_6a38d56507bf6.pdf` — confirmed live, `application/pdf`.
+
+> **The trap worth writing down.** The path used to be read as living under `/uploads`, which does
+> not exist. NTDC is a single-page application, and it answers **every** unknown path with the same
+> 8,555-byte HTML shell. So the broken link answered **HTTP 200 with an HTML page**, not an error:
+> the bid team clicked a document link, got the website, and nothing looked broken. A dead link is
+> noisy; a link that returns the wrong thing is silent.
+
+The rule that came out of it: **a document link is only filed as a document if the body is actually
+a document.** The download path checks the content type and the magic bytes (`%PDF`, `PK` for
+office/ZIP, the OLE and RAR signatures) and refuses an HTML or plain-text body outright. A tender
+whose document could not be downloaded still keeps the direct official link, and its document status
+reads `link_only` rather than pretending a package was retrieved.
+
+NTDC also publishes the **clarifications, amendments and addenda** for a tender against the notice
+itself, in the feed's `ammendments` array. Each one is kept as its own structured entry — title,
+date, file and the family it belongs to (clarification / amendment / corrigendum) — rather than
+being flattened into the notice's description text, because an amendment that moves a deadline has
+to be openable on its own and visible as a separate line on the tender.
+
+### 9.3 Capture mode
 
 The registry records whether a capture came off the live portal or from a saved copy of one
 (`last_scan_stats.mode`: `live` or `saved-capture`). The dashboard banner states this, so a saved
@@ -299,7 +327,7 @@ everything it had gathered.
 | `ppra_punjab` | `eproc.punjab.gov.pk/ActiveTenders.aspx` | ASP.NET WebForms grid. Pages are reached by **postback**, carrying `__VIEWSTATE` and `__EVENTVALIDATION` back to the server; the postback target for each page is read from the pager's own links rather than guessed. |
 | `epms_federal` | `epms.ppra.gov.pk/public/tenders/active-tenders` | Server-rendered table; the organisation card under each tender row carries the buyer. |
 | `epads_federal` | `epads.gov.pk` | Server-rendered table; the full title and agency are read from the tooltip attributes, because the visible cell is truncated. |
-| `ntdc` | `ntdc.gov.pk/ntdc/api/tenders` | Public JSON feed, no key and no session. The page itself is an Angular shell with no markup to read. |
+| `ntdc` | `ntdc.gov.pk/ntdc/api/tenders` | Public JSON feed, no key and no session. The page itself is an Angular shell with no markup to read. The same feed carries each notice's bidding-document path and its clarifications/amendments (§9.2). |
 | `wapda` | `wapda.gov.pk/wapda-tenders/` | WordPress posts, with the pager behind a query variable. |
 
 Only public pages are read. The supplier registration, captcha and bid-submission pages of these
@@ -401,6 +429,7 @@ dashboard. Re-run the capture when a portal changes and the tests tell you what 
 | Source health `error` | Portal unreachable, or the TLS fingerprint was rejected | Check the portal by hand; confirm `curl_cffi` is installed (`pip install -r requirements.txt`) |
 | Records appear but with no closing date | The portal does not publish one | Expected for EPADS, NTDC and WAPDA; the deadline arrives with the notice document at Gate 2 |
 | Records appear with a document link instead of a page | The portal has no per-notice page | Expected for PPRA Punjab; the link opens the authority's own notice document |
+| A document link opens the website instead of the document | The path was read against the wrong base, and the portal's SPA answered 200 with its HTML shell | Check the URL against §9.2 — NTDC serves documents from the site root, not from `/uploads` |
 | A tender appears twice | Two genuinely different notices share a name | Check the references: two different references are two different tenders |
 | Scan times out | The portal is slow today | Lower `BMS_LIVE_MAX_PAGES`; the scan is per source and can be repeated |
 

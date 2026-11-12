@@ -214,6 +214,33 @@ erDiagram
 | Duplicate detection on personnel names / contract numbers | Ingest-time warning |
 | Missing mandatory fields block `Approved` status | Workflow rule |
 
+### 4.4 Shared documents
+
+Some company documents do not belong to one tender — they travel with every proposal: the PEC
+certificate, the standard procurement forms, the financial predictions, the credit line certificate.
+Re-uploading them per tender is how a proposal ends up carrying last year's certificate, so they are
+held **once** in the knowledge base and attached to proposals by reference.
+
+`LibraryDocument` carries the flags:
+
+| Field | Meaning |
+|---|---|
+| `shared` | This document travels with proposals. Off by default: a reference policy or a standard text stays in the library until someone marks it as shared. |
+| `locked` | A **master copy**. It always travels with the proposal and cannot be unticked — it is the company's own standing document, and a proposal without it is non-compliant. |
+| `category` | What kind of document it is (PEC certificate, procurement forms, financial predictions, credit line certificate) — shown against each entry so the pack can be checked at a glance. |
+| `valid_until` | The date the document stops being usable. An expired shared document is shown as expired rather than quietly packed. |
+
+`Proposal.included_kb_docs` records which of the *unlocked* shared documents this particular
+proposal carries. The rule the interface enforces:
+
+- **Locked** documents are always included and shown as locked; they cannot be removed.
+- **Unlocked** shared documents are listed with a tick box and are the proposal's choice.
+- Leaving one out means it is **not packed** with the proposal — the opposite of the old behaviour
+  where everything in the library travelled with everything.
+
+The pack writes the selected documents into the submission pack and lists them in the pack's
+manifest, so what was actually submitted can be checked against what was expected.
+
 ---
 
 ## 5. Retention & archival
