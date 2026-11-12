@@ -366,6 +366,46 @@ Only public pages are read. The supplier registration, captcha and bid-submissio
 portals are never touched, and no credential is ever stored or sent — the system never signs in to
 a portal, and submission stays a human act (D-06).
 
+### 11.2.1 Where the bidding document is, portal by portal
+
+Every authority publishes its tender differently, and the difference decides whether the document
+can be fetched or only linked to. What each one actually offers:
+
+| Source | The bidding document | Retrieved? |
+|--------|---------------------|------------|
+| `ppra_punjab` | The notice document the listing row points at | **Yes** — downloaded and stored |
+| `ntdc` | The tender's own file under `/bidding/…` | **Yes** — downloaded and stored, with its clarifications and amendments |
+| `epads_federal` | `pa.epads.gov.pk/procurement/SBD/p<id>/bidding-document.pdf` | **Yes** — downloaded and stored |
+| `epms_federal` | Behind a "Download Tender Document" button on the tender's own page | **Yes** — the page is read to find the file, and the file is downloaded |
+| `wapda` | The tender post carries the notice text; no file is published against it | **No** — the record links to the post on the authority's site |
+
+**EPADS** is the neat one: the document is served from a path built out of the opportunity's own
+id, so the link is known from the listing alone and no extra request to the portal is needed to
+find it. The vendor portal also carries the document, but it answers with a sign-in page, and this
+system never signs in to a portal — so the document is read from the public host instead. Not every
+opportunity publishes a document publicly; where one does not, the link answers 403 and the tender
+falls back to its notice page.
+
+EPADS also publishes a set of **standard procurement forms** — average annual turnover, financial
+situation and performance, current contracts, past experience, and litigation history — under
+`https://pa.epads.gov.pk/procurement/procurement-forms/`. The same five files are published with
+every procurement, so they are not downloaded again for every tender; that is where the bid desk
+collects them once for the knowledge base.
+
+**EPMS** keeps the file behind a button on the tender's own page, and names it by an internal id
+the listing never shows, so the page has to be read to find the file. The page also carries a
+"Download Advertisement" button, which is the notice rather than the tender document; the two are
+told apart by their labels, because their file names are not. The file link that is found is kept
+on the record, so the tender ends up carrying a direct link to the document rather than only to the
+page it sits on.
+
+**When the document is fetched.** The download happens when the bid manager approves Stage 1 — the
+moment the team says it is pursuing the tender — rather than for every notice the moment it is
+captured. A scan that pulled every tender document from every portal would download thousands of
+files a day to answer a question nobody has asked yet, and most of them would be for tenders the
+team never pursues. The link is on the record from the start either way, so the document is one
+click away before anyone has decided to bid.
+
 **PPRA Punjab answers only from inside Pakistan.** Its e-Procurement host (`eproc.punjab.gov.pk`)
 does not accept a connection from outside the country: a read from the deployed API times out on
 the connection, while the same read from a host in Pakistan returns the grid. The other four

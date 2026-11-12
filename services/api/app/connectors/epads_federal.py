@@ -25,6 +25,18 @@ CLOSING_RE = re.compile(r"Closing On:\s*([0-9dhms ]+Left)", re.I)
 
 PUBLISHED_RE = re.compile(r"Published On:\s*([A-Za-z]+,\s*[A-Za-z]+\s+\d{1,2},\s*\d{4}[^C]*)", re.I)
 
+# Where EPADS publishes the standard procurement forms. The same five files
+# are published with every procurement, so they are fetched once by hand
+# rather than downloaded again for every tender.
+STANDARD_FORMS = (
+    "Average-Annual-Turnover.pdf",
+    "Financial-Situation-and-Performance.pdf",
+    "Current-Contract-Commitments_1.pdf",
+    "Past-Experience.pdf",
+    "Historical-Contract-Non.pdf",
+)
+STANDARD_FORMS_URL = "https://pa.epads.gov.pk/procurement/procurement-forms/"
+
 
 def _clean_department(text: str) -> str:
     """Collapse the department name when the portal prints it twice.
@@ -48,6 +60,49 @@ def _clean_department(text: str) -> str:
 class EPADSFederalConnector(BaseConnector):
     adapter = "epads_federal"
     label = "Federal EPADS (e-Pak Acquisition and Disposal System)"
+
+    # Where EPADS serves the Standard Bidding Document. It is a separate
+    # public host from the portal itself, and the document is served under a
+    # path built from the opportunity's own id — "p" followed by that id.
+    #
+    # The vendor portal (vendors.epads.gov.pk) also carries the document, but
+    # it answers with a sign-in page, and this system never signs in to a
+    # portal. The public host does not need an account, so the document is
+    # read from there.
+    DOCUMENT_BASE = "https://pa.epads.gov.pk"
+
+    def document_url(self, identifier: str) -> str:
+        """The direct link to an opportunity's bidding document.
+
+        The path is built from the opportunity's own id, so the link is known
+        from the listing alone — no extra request to the portal to find it.
+
+        Not every opportunity publishes a bidding document publicly. Where one
+        does not, the link answers 403 and the tender falls back to its
+        notice page, which is the authority's own record of it.
+        """
+        if not identifier:
+            return ""
+        return f"{self.DOCUMENT_BASE}/procurement/SBD/p{identifier}/bidding-document.pdf?download=true"
+
+    def fetch_documents(self, native_id, ref=None):
+        """The bidding document published with this procurement.
+
+        EPADS also publishes a set of standard procurement forms — turnover,
+        financial position, current commitments, past experience, litigation
+        history — under `/procurement/procurement-forms/`. The same five
+        files are published with every procurement, so they are not fetched
+        per tender; the location is recorded in the documentation instead.
+        """
+        ref = ref or {}
+        url = ref.get("document_url") or ""
+        if not url:
+            return None
+        fetched = self.download_document(url)
+        if not fetched:
+            return None
+        filename, content = fetched
+        return [(filename or "bidding-document.pdf", content)]
 
     def fetch_listing(self):
         if self.fixture_mode:
@@ -187,6 +242,10 @@ class EPADSFederalConnector(BaseConnector):
                 {
                     "native_id": f"epads-{identifier}",
                     "url": self.abs_url(link),
+                    # The bidding document itself. EPADS serves it from a public
+                    # host under a path built from the opportunity's own id,
+                    # so the link is known without reading the notice page.
+                    "document_url": self.document_url(identifier),
                     "title": title.strip(),
                     "buyer_name": _clean_department(agency),
                     "buyer_ref": reference or f"EPADS/{identifier}",

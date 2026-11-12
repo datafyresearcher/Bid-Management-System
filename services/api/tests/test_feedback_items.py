@@ -119,6 +119,69 @@ def test_the_broken_uploads_link_is_repaired(client):
         db.close()
 
 
+def test_an_epads_tender_links_and_downloads_its_bidding_document():
+    """EPADS publishes the document from a path built out of the tender's id.
+
+    The link is therefore known from the listing alone — no extra request to
+    the portal — and the document itself is public, so it can be fetched.
+    """
+    from app.connectors.epads_federal import EPADSFederalConnector
+
+    connector = EPADSFederalConnector.__new__(EPADSFederalConnector)
+    url = connector.document_url("178344")
+    assert url == (
+        "https://pa.epads.gov.pk/procurement/SBD/p178344/bidding-document.pdf?download=true"
+    )
+    assert connector.document_url("") == ""
+
+
+def test_an_epms_tender_page_carries_the_document_download():
+    """EPMS publishes the file behind a button on the tender's own page.
+
+    The page also carries a "Download Advertisement" button, which is the
+    notice rather than the tender document, so the two are told apart by
+    their labels.
+    """
+    from app.connectors.epms_federal import EPMSFederalConnector
+
+    html = """
+    <a href="/pdf?file=ZG9j" class="btn"><i class="icon-download"></i> Download Tender Document </a>
+    <a href="/pdf?file=YWR2" class="btn"><i class="icon-file"></i> Download Advertisement </a>
+    """
+    connector = EPMSFederalConnector.__new__(EPMSFederalConnector)
+    connector.listing_url = connector.base_url = "https://epms.ppra.gov.pk/public/tenders/active-tenders"
+    found = connector.document_file_url(html)
+    assert found.endswith("/pdf?file=ZG9j")
+    assert "YWR2" not in found
+
+
+def test_a_tender_keeps_the_direct_file_link_once_it_has_been_found():
+    """A portal that hides the file behind a button still ends up with one.
+
+    The link found while the document was read is kept on the record, so the
+    tender carries a direct link to the file rather than only to the page it
+    sits on.
+    """
+    from app.services.documents import _keep_resolved_links
+
+    class _Opp:
+        source_refs = [
+            {
+                "source_code": "epms_federal",
+                "native_id": "TS0000017980E",
+                "url": "https://epms.ppra.gov.pk/public/tenders/tender-details/TS0000017980E",
+                "document_url": "https://epms.ppra.gov.pk/public/tenders/tender-details/TS0000017980E",
+            }
+        ]
+
+    opp = _Opp()
+    resolved = "https://epms.ppra.gov.pk/pdf?file=dGVuZGVy"
+    _keep_resolved_links(opp, {"TS0000017980E": resolved})
+    ref = opp.source_refs[0]
+    assert ref["document_url"] == resolved
+    assert ref["url"] == resolved
+
+
 def test_a_non_ntdc_record_is_left_alone(client):
     """The repair reaches only the records it is meant to reach."""
     from app.db import backfill_ntdc_notice_links
