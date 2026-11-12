@@ -282,7 +282,7 @@ export default function OpportunityPage() {
                   </dl>
                   {opp.document_link ? (
                     <a className="src-link" href={opp.document_link} target="_blank" rel="noreferrer noopener">
-                      Download the bidding document from the source portal ↗
+                      Open the bidding document on the source portal ↗
                     </a>
                   ) : null}
                   {opp.source.notice_url ? (
@@ -421,10 +421,10 @@ export default function OpportunityPage() {
           {opp.document_link ? (
             <p>
               <a className="src-link" href={opp.document_link} target="_blank" rel="noreferrer noopener">
-                Download the bidding document from {opp.source?.name || "the source portal"} ↗
+                Open the bidding document on {opp.source?.name || "the source portal"} ↗
               </a>
               <div className="muted">
-                This is the file on the authority&apos;s own site. If it could not be fetched into the
+                This is the document on the authority&apos;s own site. If it could not be fetched into the
                 system, the link is still here so you can open it yourself.
               </div>
             </p>

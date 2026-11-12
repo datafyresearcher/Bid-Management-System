@@ -266,6 +266,70 @@ def test_a_tender_published_under_several_notices_opens_a_document(client):
     assert info["document_url"] != "https://ntdc.gov.pk"
 
 
+def test_a_tender_on_file_is_given_the_link_its_own_id_determines(client):
+    """Every tender on file gets its document link, without a portal request.
+
+    Some authorities publish the document under a path built out of the
+    notice's own id. Where that is the case the link is known from the
+    record alone, so a tender whose listing page has not been read again
+    still gets one.
+    """
+    from sqlalchemy import select
+
+    from app.db import backfill_derived_document_links
+    from app.models import Opportunity, Source
+
+    db = _session()
+    try:
+        source = db.execute(
+            select(Source).where(Source.code == "epads_federal")
+        ).scalar_one_or_none()
+        if source is None:
+            source = Source(
+                code="epads_federal",
+                name="Federal EPADS",
+                adapter="epads_federal",
+                type="portal",
+                url="https://epads.gov.pk/",
+                listing_url="https://epads.gov.pk",
+            )
+            db.add(source)
+            db.commit()
+            db.refresh(source)
+        source_id = source.id
+        opp = Opportunity(
+            title="An EPADS opportunity whose listing page was never read again",
+            buyer_name="Some Department",
+            buyer_ref="EPADS/12345",
+            source_id=source_id,
+            source_refs=[
+                {
+                    "source_id": source_id,
+                    "source_code": "epads_federal",
+                    "native_id": "epads-12345",
+                    "url": "https://epads.gov.pk/opportunities/federal/procurements/12345",
+                    "document_url": "",
+                }
+            ],
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    assert backfill_derived_document_links() >= 1
+
+    db = _session()
+    try:
+        stored = db.get(Opportunity, opp_id)
+        assert stored.source_refs[0]["document_url"] == (
+            "https://pa.epads.gov.pk/procurement/SBD/p12345/bidding-document.pdf?download=true"
+        )
+    finally:
+        db.close()
+
+
 def test_a_tender_that_aged_out_of_the_window_still_opens_its_own_file(client):
     """The portal keeps the tender's file; only the window moves.
 

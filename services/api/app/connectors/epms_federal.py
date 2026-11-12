@@ -40,6 +40,23 @@ class EPMSFederalConnector(BaseConnector):
     adapter = "epms_federal"
     label = "Federal EPMS / EPADS portal"
 
+    # Where a tender's own page lives. The listing is at
+    # /public/tenders/active-tenders and the tender's page at
+    # /public/tenders/tender-details/<tender number>, so the detail path is
+    # a sibling of the listing rather than a child of it.
+    DETAIL_BASE = "https://epms.ppra.gov.pk/public/tenders"
+
+    def document_url_for(self, native_id: str) -> str:
+        """The tender's own page, from the notice's own id.
+
+        The bidding document is published behind a "Download Tender Document"
+        button on that page, so the page is the link the record carries until
+        the file itself has been read.
+        """
+        if not native_id:
+            return ""
+        return f"{self.DETAIL_BASE}/tender-details/{native_id}"
+
     def fetch_documents(self, native_id, ref=None):
         """The bidding document the authority published for this tender.
 
@@ -56,7 +73,7 @@ class EPMSFederalConnector(BaseConnector):
             return None
         url = (ref or {}).get("document_url") or ""
         if not url:
-            url = f"{self.base_url.rstrip('/')}/tender-details/{native_id}"
+            url = self.document_url_for(native_id)
         try:
             html = self.client().get(url)
         except Exception:
@@ -308,7 +325,7 @@ class EPMSFederalConnector(BaseConnector):
         """Read one notice's detail page for the extra fields the list omits."""
         if self.fixture_mode or not native_id:
             return None
-        url = f"{self.base_url.rstrip('/')}/tender-details/{native_id}"
+        url = self.document_url_for(native_id)
         try:
             html = self.client().get(url)
         except Exception:

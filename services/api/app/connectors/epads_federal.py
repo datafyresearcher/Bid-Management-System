@@ -85,6 +85,16 @@ class EPADSFederalConnector(BaseConnector):
             return ""
         return f"{self.DOCUMENT_BASE}/procurement/SBD/p{identifier}/bidding-document.pdf?download=true"
 
+    def document_url_for(self, native_id: str) -> str:
+        """The document link, from the notice's own id.
+
+        Every opportunity on file can therefore be given its link without a
+        request to the portal — the ones whose listing page has not been
+        read again since this was understood included.
+        """
+        identifier = (native_id or "").split("-")[-1]
+        return self.document_url(identifier)
+
     def fetch_documents(self, native_id, ref=None):
         """The bidding document published with this procurement.
 
