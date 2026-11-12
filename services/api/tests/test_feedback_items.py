@@ -782,6 +782,74 @@ def test_the_implied_value_matches_the_estimate_the_tender_states():
     assert detected["estimated_boq_value"] == 4_500_000
 
 
+def test_the_estimated_cost_the_document_states_reaches_the_record(client, auth):
+    """A source that publishes no estimate stops showing unknown once the
+    bidding document has been read.
+
+    NTDC and EPADS publish no figure with the notice and a Punjab row can
+    leave the cell empty. The document itself states the estimated cost, and
+    the record was reading it only to grade itself with it — the figure never
+    reached the field the bid team is shown.
+    """
+    opp_id = _make_opportunity(client, auth, title="Estimated cost from the document")
+    db, opp = _get(opp_id)
+    db.add(
+        _document_for(
+            db,
+            opp,
+            "ITT.txt",
+            "Scope of work: supply of goods. Estimated Cost: PKR 162,500,000/- "
+            "Bid security of PKR 3,250,000/- being 2% of the estimated cost shall be furnished. "
+            "Last date for submission of bids: 10-Feb-2027.",
+        )
+    )
+    db.commit()
+    extractor.run(db, opp)
+    db.refresh(opp)
+    assert opp.estimated_value == 162_500_000
+    # The security the document states implies exactly the value the
+    # document's own estimate line gives — 3,250,000 is 2% of 162,500,000.
+    assert opp.estimated_boq_value == 162_500_000
+    assert opp.value_band and opp.value_band != "unknown"
+    db.close()
+
+    detail = client.get(f"/api/opportunities/{opp_id}", headers=auth).json()
+    assert detail["estimated_value"] == 162_500_000
+
+
+def test_the_source_published_estimate_is_not_overwritten(client, auth):
+    """The authority's own figure is the one that stays.
+
+    Where the source published an estimated cost with the notice, the
+    system's reading of the document does not replace it.
+    """
+    payload = {
+        "title": "Source figure stays tender",
+        "buyer_name": "Test buyer",
+        "buyer_ref": "TEST-VAL-1",
+        "estimated_value": 100_000_000,
+        "source_label": "Test",
+    }
+    resp = client.post("/api/opportunities/manual", json=payload, headers=auth)
+    assert resp.status_code == 200, resp.text
+    opp_id = resp.json()["id"]
+
+    db, opp = _get(opp_id)
+    db.add(
+        _document_for(
+            db,
+            opp,
+            "ITT.txt",
+            "Estimated Cost: PKR 999,999,999/- Last date for submission of bids: 10-Feb-2027.",
+        )
+    )
+    db.commit()
+    extractor.run(db, opp)
+    db.refresh(opp)
+    assert opp.estimated_value == 100_000_000
+    db.close()
+
+
 # ----------------------------------------------------------------------
 # 2.9  The submission checklist
 # ----------------------------------------------------------------------

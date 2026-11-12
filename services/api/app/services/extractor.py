@@ -23,7 +23,7 @@ from app.models import Document, ExtractedRequirement
 from app.services import audit
 from app.services import bid_summary
 from app.services import documents
-from app.services.utils import normalize_key, parse_amount, parse_date, parse_money, snippet
+from app.services.utils import normalize_key, parse_amount, parse_date, parse_money, snippet, value_band
 
 # How much of a tender's text is read. A full bidding document runs to
 # roughly a hundred thousand characters — the instructions, the bid data
@@ -556,6 +556,16 @@ def _apply_fields(opp, detected: dict) -> None:
             opp.qualification_thresholds = merged
         elif field in settable:
             setattr(opp, field, value)
+
+    # The estimated cost the document itself states. Several sources publish
+    # no figure with the notice — NTDC and EPADS carry none in their feeds,
+    # and a Punjab listing row can leave the cell empty — so without this the
+    # record would show an unknown value even after its bidding document had
+    # been read. The authority's own figure stays untouched: where the source
+    # published one, the system's reading of the document does not replace it.
+    if detected.get("document_estimated_value") and not opp.estimated_value:
+        opp.estimated_value = detected["document_estimated_value"]
+        opp.value_band = value_band(opp.estimated_value, opp.currency)
 
     # A percentage that was found on a previous read but is no longer stated
     # must not stay behind as a stale number, or the implied BOQ value would

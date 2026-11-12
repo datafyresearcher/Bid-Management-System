@@ -83,6 +83,15 @@ export default function OpportunityPage() {
   const closeStates = ["WON", "LOST", "REJECTED", "ABANDONED", "SCREENED_OUT", "AUTO_ARCHIVED"];
   const d = daysTo(opp.submission_deadline);
   const expired = opp.deadline_status === "expired";
+  // Whether a bidding document is on file and has been read. The commercial
+  // figures — the estimated cost, the bid security and the value implied by
+  // it — are read out of that document, so a figure that is missing means
+  // something different depending on whether it has been read yet.
+  const docOnFile = ["uploaded", "parsed", "fetched"].includes(opp.documents_status);
+  const notReadYet = (what) =>
+    docOnFile
+      ? `The bidding document on file does not state ${what}.`
+      : "Read out of the bidding document once the bid passes Stage 1.";
 
   const decide = (gateTask) => {
     const decision = window.prompt(
@@ -233,7 +242,19 @@ export default function OpportunityPage() {
               <dt>Tender type</dt><dd>{opp.tender_type}</dd>
               <dt>Regime</dt><dd>{opp.procurement_regime || "—"}</dd>
               <dt>Contract family</dt><dd>{opp.contract_family || "—"}</dd>
-              <dt>Estimated value</dt><dd>{fmtMoney(opp.estimated_value, opp.currency)} ({opp.value_band})</dd>
+              <dt>Estimated value</dt>
+              <dd>
+                {opp.estimated_value ? (
+                  <>
+                    {fmtMoney(opp.estimated_value, opp.currency)} ({opp.value_band})
+                  </>
+                ) : (
+                  <>
+                    — <span className="muted">({opp.value_band || "unknown"})</span>
+                    <div className="muted">{notReadYet("an estimated cost")}</div>
+                  </>
+                )}
+              </dd>
               <dt>Implied BOQ value</dt>
               <dd>
                 {opp.estimated_boq_value ? (
@@ -247,7 +268,7 @@ export default function OpportunityPage() {
                 ) : (
                   <>
                     —
-                    {opp.boq_estimate_note ? <div className="muted">{opp.boq_estimate_note}</div> : null}
+                    {opp.boq_estimate_note ? <div className="muted">{opp.boq_estimate_note}</div> : <div className="muted">{notReadYet("a bid security amount and its percentage")}</div>}
                   </>
                 )}
               </dd>
@@ -259,9 +280,18 @@ export default function OpportunityPage() {
               <dt>Prequalification</dt><dd>{opp.prequal_required ? "Yes" : "No"}</dd>
               <dt>Bid security</dt>
               <dd>
-                {fmtMoney(opp.bid_security_amount, opp.currency)}
-                {opp.bid_security_form ? ` (${opp.bid_security_form})` : ""}
-                {opp.bid_security_percent ? ` — ${opp.bid_security_percent}% of the estimated value` : ""}
+                {opp.bid_security_amount ? (
+                  <>
+                    {fmtMoney(opp.bid_security_amount, opp.currency)}
+                    {opp.bid_security_form ? ` (${opp.bid_security_form})` : ""}
+                    {opp.bid_security_percent ? ` — ${opp.bid_security_percent}% of the estimated value` : ""}
+                  </>
+                ) : (
+                  <>
+                    —
+                    <div className="muted">{notReadYet("a bid security amount")}</div>
+                  </>
+                )}
               </dd>
               <dt>Tender fee</dt><dd>{fmtMoney(opp.tender_fee, opp.currency)}</dd>
               <dt>Documents</dt><dd>{documentsStatusLabel(opp.documents_status)}</dd>
