@@ -41,6 +41,26 @@ def log(message: str):
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
 
 
+def pager_link(page, wanted: str):
+    """The pager's link for a page number.
+
+    The number sits inside a span inside the anchor, so an exact-text match on
+    the anchor itself never finds it — the text engine assigns the text to the
+    innermost element that holds it. A walk that looked for the anchor by its
+    own text therefore found nothing, and stopped after the first page, so the
+    portal's tenders past the front of the grid were never captured.
+    """
+    for selector in (
+        f'a:has(span:text-is("{wanted}"))',
+        f'a:has(span:text-is("{wanted} "))',
+        f'a >> text="{wanted}"',
+    ):
+        locator = page.locator(selector).first
+        if locator.count():
+            return locator
+    return None
+
+
 def capture_ppra(page) -> list[str]:
     """Read every page of the PPRA Punjab listing grid in a real browser."""
     LISTING_URL = "https://eproc.punjab.gov.pk/ActiveTenders.aspx"
@@ -57,18 +77,25 @@ def capture_ppra(page) -> list[str]:
     # a page that repeats what we already have means the end.
     while len(pages) < MAX_PAGES:
         wanted = str(len(pages) + 1)
-        anchor = page.locator(f'a:text-is("{wanted}")').first
-        try:
-            if anchor.count() == 0:
-                break
-        except Exception:
+        anchor = pager_link(page, wanted)
+        if anchor is None:
             break
-        anchor.click()
-        page.wait_for_load_state("domcontentloaded")
+        previous = pages[-1]
+        try:
+            anchor.click(timeout=20_000)
+        except Exception as exc:
+            log(f"could not open page {wanted}: {exc}")
+            break
         page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
-        page.wait_for_timeout(1200)
+        # The postback replaces the grid, and it does not always land within a
+        # fixed pause, so the new page is waited for rather than assumed.
         html = page.content()
-        if html == pages[-1]:
+        for _ in range(40):
+            if html != previous:
+                break
+            page.wait_for_timeout(500)
+            html = page.content()
+        if html == previous:
             break
         pages.append(html)
         log(f"captured page {len(pages)}")

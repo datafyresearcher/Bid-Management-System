@@ -274,6 +274,7 @@ export const RELATED_KIND_LABELS = {
   amendment: "Amendment",
   corrigendum: "Corrigendum",
   evaluation: "Evaluation result",
+  notice: "Tender notice",
   related: "Related document",
 };
 

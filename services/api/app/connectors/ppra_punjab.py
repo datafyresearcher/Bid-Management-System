@@ -226,6 +226,23 @@ class PPRAPunjabConnector(BaseConnector):
             # The tender was first published with the original notice.
             if original.get("published_at"):
                 corrigendum["published_at"] = original["published_at"]
+            # Both rows describe one tender, so the record has to end up with
+            # one document and both notices beside it: the bidding document
+            # from the original, and the correction published against it.
+            # Whichever of the two rows is read first, the record comes out
+            # the same.
+            primary = original.get("document_url") or ""
+            related = list(original.get("related_documents") or [])
+            for entry in corrigendum.get("related_documents") or []:
+                if not isinstance(entry, dict):
+                    continue
+                url = entry.get("url") or ""
+                if url and url != primary and url not in [r.get("url") for r in related if isinstance(r, dict)]:
+                    related.append(entry)
+            original["related_documents"] = related
+            original["document_url"] = primary
+            corrigendum["document_url"] = primary
+            corrigendum["related_documents"] = related
             corrigendum["_paired"] = True
         return notices
 
@@ -374,12 +391,43 @@ class PPRAPunjabConnector(BaseConnector):
             if status and status != notice_kind:
                 description = f"{description} Status: {status}."
 
+            notice_url = self.abs_url(notice_pdf)
+            bidding_url = self.abs_url(bidding_pdf)
+            published = parse_date(cells[3].get_text(" ", strip=True))
+            is_corrigendum = notice_kind == "Corrigendum"
+
+            # The portal publishes two documents against every notice: the
+            # tender notice, which is the authority's advertisement of the
+            # tender, and the bidding document, which is what the bidder
+            # actually works from. They are not the same file, and they are
+            # not equally useful — the bidding document carries the
+            # instructions, the bid data sheet and the commercial terms, the
+            # bid security among them, while the tender notice is very often a
+            # scanned advertisement with no readable text at all.
+            #
+            # The record therefore points at the bidding document, and the
+            # notice is kept beside it: a corrigendum is published as a
+            # notice, and a reader has to be able to see the correction.
+            document_url = bidding_url or notice_url
+            related = []
+            if notice_url and notice_url != document_url:
+                related.append(
+                    {
+                        "title": "Corrigendum" if is_corrigendum else "Tender notice",
+                        "url": notice_url,
+                        # A date, as a string: the related documents are stored
+                        # as JSON, and a date object cannot go into JSON.
+                        "date": published.isoformat() if published else "",
+                        "kind": "corrigendum" if is_corrigendum else "notice",
+                    }
+                )
+
             notices.append(
                 {
                     "native_id": f"ppra-{identity}",
                     # The notice document is the authority's own publication of
                     # this tender, and it is what the portal links a reader to.
-                    "url": self.abs_url(notice_pdf) or detail_url or self.base_url,
+                    "url": notice_url or detail_url or self.base_url,
                     "title": title,
                     "buyer_name": department,
                     # The identity of the tender is the document the authority
@@ -391,14 +439,16 @@ class PPRAPunjabConnector(BaseConnector):
                     "city": "",
                     "area": self.source.area or "Punjab",
                     "estimated_value": None,
-                    "published_at": parse_date(cells[3].get_text(" ", strip=True)),
+                    "published_at": published,
                     "submission_deadline": parse_date(cells[4].get_text(" ", strip=True)),
                     "opening_at": None,
                     "description": description,
                     "tender_type": self._tender_type(procurement_type),
-                    "notice_status": "Corrigendum" if notice_kind == "Corrigendum" else "Published",
-                    "document_url": self.abs_url(notice_pdf),
-                    "bidding_document_url": self.abs_url(bidding_pdf),
+                    "notice_status": "Corrigendum" if is_corrigendum else "Published",
+                    "document_url": document_url,
+                    "bidding_document_url": bidding_url,
+                    "notice_url": notice_url,
+                    "related_documents": related,
                     "detail_url": detail_url,
                 }
             )
@@ -453,19 +503,39 @@ class PPRAPunjabConnector(BaseConnector):
         return {"url": url, "html": html}
 
     def fetch_documents(self, native_id, ref=None):
-        """The notice document, either from the saved capture or the portal."""
+        """The bidding document and the notice published with it.
+
+        The portal publishes both, and they are different files: the bidding
+        document carries the instructions, the bid data sheet and the
+        commercial terms, while the tender notice is the advertisement of the
+        tender. A correction published against the tender is fetched too, so
+        a reader sees the tender as it now stands.
+        """
         if not native_id:
             return None
 
         if not self.fixture_mode:
-            document_url = (ref or {}).get("document_url") or ""
-            if not document_url:
+            ref = ref or {}
+            wanted: list[str] = []
+            candidates = [ref.get("document_url") or ""]
+            candidates.extend(
+                entry.get("url") or ""
+                for entry in (ref.get("related_documents") or [])
+                if isinstance(entry, dict)
+            )
+            for url in candidates:
+                if url and url not in wanted:
+                    wanted.append(url)
+            if not wanted:
                 return None
-            content = self._download(document_url)
-            if not content:
-                return None
-            filename = document_url.rsplit("/", 1)[-1] or f"{native_id}.pdf"
-            return [(filename, content)]
+            fetched = []
+            for url in wanted:
+                content = self._download(url)
+                if not content:
+                    continue
+                filename = url.rsplit("/", 1)[-1] or f"{native_id}.pdf"
+                fetched.append((filename, content))
+            return fetched or None
 
         path = self.fixture_path("documents.json")
         if not path.exists():

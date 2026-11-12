@@ -373,7 +373,7 @@ can be fetched or only linked to. What each one actually offers:
 
 | Source | The bidding document | Retrieved? |
 |--------|---------------------|------------|
-| `ppra_punjab` | The notice document the listing row points at | **Yes** — downloaded and stored |
+| `ppra_punjab` | The **Bidding Document** the listing row's second document column points at | **Yes** — downloaded and stored, with the tender notice and any corrigendum fetched beside it |
 | `ntdc` | The tender's own file under `/bidding/…` | **Yes** — downloaded and stored, with its clarifications and amendments |
 | `epads_federal` | `pa.epads.gov.pk/procurement/SBD/p<id>/bidding-document.pdf` | **Yes** — downloaded and stored |
 | `epms_federal` | Behind a "Download Tender Document" button on the tender's own page | **Yes** — the page is read to find the file, and the file is downloaded |
@@ -398,6 +398,22 @@ the listing never shows, so the page has to be read to find the file. The page a
 told apart by their labels, because their file names are not. The file link that is found is kept
 on the record, so the tender ends up carrying a direct link to the document rather than only to the
 page it sits on.
+
+**PPRA Punjab publishes two documents against every tender**, in two columns of the same
+grid row: *Tender Notice* and *Bidding Document*. They are different files and they are
+not equally useful. The tender notice is the authority's advertisement of the tender, and
+it is very often a scanned page with no readable text at all — measured against the live
+grid, the notice of a typical tender yields between 0 and 25 characters of text. The
+bidding document is the file the bidder works from: the instructions to bidders, the bid
+data sheet, the conditions of contract and the forms, and it yields around 95,000
+characters of readable text.
+
+That matters more than it sounds. The percentage of the estimated cost that the bid
+security represents is stated in the **bidding document** and nowhere else, so a record
+pointing at the notice can never carry an implied BOQ value. The record therefore points
+at the bidding document, and the notice is kept beside it as a related document, where a
+corrigendum — which the portal publishes as a notice of its own — is kept as well. Both
+files are fetched when the document is downloaded.
 
 **When the document is fetched.** The download happens when the bid manager approves Stage 1 — the
 moment the team says it is pursuing the tender — rather than for every notice the moment it is

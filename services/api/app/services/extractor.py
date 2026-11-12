@@ -23,7 +23,13 @@ from app.services import audit
 from app.services import bid_summary
 from app.services.utils import normalize_key, parse_amount, parse_date, parse_money, snippet
 
-TEXT_CAP = 80000
+# How much of a tender's text is read. A full bidding document runs to
+# roughly a hundred thousand characters — the instructions, the bid data
+# sheet, the conditions of contract and the forms — and the commercial terms
+# a bid manager needs sit in the middle of it, so a cap that cuts the tail
+# off loses the greater part of the document. The AI layer reads its own
+# smaller slice below, so this does not change what is sent to the model.
+TEXT_CAP = 200000
 LLM_CAP = 40000
 
 CATEGORY_HINTS = [
