@@ -229,6 +229,14 @@ def run_source(db, source, page_budget=None, scan_seconds=None, connect_timeout=
     # The whole listing is captured in one pass, so a portal that published a
     # hundred tenders since the last scan does not cost a hundred round trips.
     normalizer.normalize_notices(db, source, notices)
+    # A portal that publishes its whole history at once knows where every
+    # tender it has ever published is kept. The tenders already on file are
+    # pointed at their own document, so one that has aged out of the window
+    # the notices are taken from still opens the tender rather than the
+    # portal's front page.
+    document_index = getattr(connector, "document_index", None)
+    if document_index:
+        normalizer.refresh_document_links(db, source, document_index)
     after_ids = set(db.execute(select(Opportunity.id)).scalars().all())
     new_ids = after_ids - before_ids
     created = len(new_ids)

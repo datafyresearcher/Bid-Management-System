@@ -24,7 +24,7 @@ def test_the_ntdc_document_link_is_the_real_file(client, auth):
     assert "/uploads/" not in NTDCConnector.DOCUMENT_BASE
 
 
-def test_the_records_already_on_file_are_pointed_at_their_own_tender():
+def test_the_records_already_on_file_are_pointed_at_their_own_tender(client):
     """Tenders captured before the fix open their own document too.
 
     A record's notice link is rewritten in place from the document link
@@ -68,7 +68,7 @@ def test_the_records_already_on_file_are_pointed_at_their_own_tender():
         db.close()
 
 
-def test_the_broken_uploads_link_is_repaired():
+def test_the_broken_uploads_link_is_repaired(client):
     """The link that was actually in the database, repaired.
 
     Every NTDC tender captured before the document link was stored carried
@@ -119,7 +119,7 @@ def test_the_broken_uploads_link_is_repaired():
         db.close()
 
 
-def test_a_non_ntdc_record_is_left_alone():
+def test_a_non_ntdc_record_is_left_alone(client):
     """The repair reaches only the records it is meant to reach."""
     from app.db import backfill_ntdc_notice_links
     from app.models import Opportunity
@@ -150,6 +150,73 @@ def test_a_non_ntdc_record_is_left_alone():
     try:
         stored = db.get(Opportunity, opp_id)
         assert stored.source_refs[0]["url"] == "https://eproc.punjab.gov.pk/ActiveTenders.aspx"
+    finally:
+        db.close()
+
+
+def test_a_tender_that_aged_out_of_the_window_still_opens_its_own_file(client):
+    """The portal keeps the tender's file; only the window moves.
+
+    A tender captured while it was recent, and now older than the lookback
+    window the notices are taken from, still has a file at the portal. The
+    link is refreshed from the portal's own record of that tender, so it
+    opens the tender rather than the portal's front page.
+    """
+    from sqlalchemy import select
+
+    from app.models import Opportunity, Source
+    from app.services.normalizer import refresh_document_links
+
+    db = _session()
+    try:
+        source = db.execute(select(Source).where(Source.code == "ntdc")).scalar_one_or_none()
+        if source is None:
+            source = Source(
+                code="ntdc",
+                name="NTDC Tenders",
+                adapter="ntdc",
+                type="portal",
+                url="https://ntdc.gov.pk/",
+            )
+            db.add(source)
+            db.commit()
+            db.refresh(source)
+        source_id = source.id
+        opp = Opportunity(
+            title="An NTDC tender that has aged out of the window",
+            buyer_name="NTDC",
+            buyer_ref="NTDC-OLD-3",
+            source_id=source_id,
+            source_refs=[
+                {
+                    "source_code": "ntdc",
+                    "native_id": "ntdc-758",
+                    "url": "https://ntdc.gov.pk/tendors",
+                    "document_url": "",
+                }
+            ],
+        )
+        db.add(opp)
+        db.commit()
+        opp_id = opp.id
+    finally:
+        db.close()
+
+    index = {
+        "ntdc-758": {
+            "document_url": "https://ntdc.gov.pk/bidding/pre%20bid%20meeting_6aa39bd15b2d9.pdf",
+            "related_documents": [],
+        }
+    }
+    db = _session()
+    try:
+        source = db.get(Source, source_id)
+        changed = refresh_document_links(db, source, index)
+        assert changed == 1
+        stored = db.get(Opportunity, opp_id)
+        ref = stored.source_refs[0]
+        assert ref["url"] == "https://ntdc.gov.pk/bidding/pre%20bid%20meeting_6aa39bd15b2d9.pdf"
+        assert ref["document_url"] == ref["url"]
     finally:
         db.close()
 

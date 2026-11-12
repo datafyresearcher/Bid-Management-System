@@ -256,6 +256,69 @@ def _native_id_of(opp: Opportunity) -> str:
     return ""
 
 
+def refresh_document_links(db, source, index: dict) -> int:
+    """Point the tenders already on file at the document the portal holds.
+
+    A portal publishes its whole history at once, and only the recent
+    notices are captured — the rest are outside the lookback window, which
+    is what decides what is *new*. A tender captured while it was recent,
+    and now older than that window, would keep whatever link it was
+    captured with, which may be the portal's front page rather than the
+    tender.
+
+    The portal keeps the tender's own file for years, and the feed carries
+    the path to it, so the link is refreshed from the portal's own record of
+    that tender. A tender on file therefore opens the file the authority
+    published for it, however old the tender is.
+    """
+    if not index:
+        return 0
+
+    rows = db.execute(
+        select(Opportunity.id, Opportunity.source_refs).where(Opportunity.source_id == source.id)
+    ).all()
+    updates = []
+    for opp_id, refs in rows:
+        if not isinstance(refs, list) or not refs:
+            continue
+        updated = []
+        dirty = False
+        for ref in refs:
+            if not isinstance(ref, dict) or ref.get("source_code") != source.code:
+                updated.append(ref)
+                continue
+            entry = index.get(ref.get("native_id") or "")
+            if not entry:
+                updated.append(ref)
+                continue
+            document = entry.get("document_url") or ""
+            related = entry.get("related_documents") or []
+            if not document:
+                updated.append(ref)
+                continue
+            fresh = dict(ref)
+            changed = False
+            if fresh.get("document_url") != document:
+                fresh["document_url"] = document
+                changed = True
+            # The notice link opens the tender's own file.
+            if fresh.get("url") != document:
+                fresh["url"] = document
+                changed = True
+            if related and fresh.get("related_documents") != related:
+                fresh["related_documents"] = related
+                changed = True
+            if changed:
+                dirty = True
+            updated.append(fresh)
+        if dirty:
+            updates.append({"id": opp_id, "source_refs": updated})
+    if updates:
+        db.bulk_update_mappings(Opportunity, updates)
+        db.commit()
+    return len(updates)
+
+
 def normalize_notice(db, source, notice: dict) -> Opportunity:
     return _normalize_one(db, source, notice, None)
 
