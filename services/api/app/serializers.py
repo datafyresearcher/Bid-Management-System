@@ -322,13 +322,35 @@ def source_attribution(o):
         return None
 
     primary = refs[0] if refs else {}
-    notice_url = primary.get("url") or ""
-    document_url = primary.get("document_url") or ""
+    portal_url = src.url if src else ""
+    listing_url = src.listing_url if src else ""
+
+    def carries_a_document(ref):
+        """Whether this notice points at a document rather than at a page.
+
+        A notice that published no file has none, and a capture that fell
+        back to the portal's own address has none either — neither is a
+        document, and neither may be offered as one.
+        """
+        doc = (ref.get("document_url") or "").strip()
+        if not doc:
+            return False
+        places = {p.rstrip("/") for p in (portal_url, listing_url) if p}
+        return doc.rstrip("/") not in places
+
+    # A tender published under more than one notice keeps every one of them.
+    # The reference the authority published it under comes from the first, but
+    # the link that opens the tender comes from the first one that actually
+    # carries a document — otherwise the tender opens on whichever notice
+    # happened to be captured first, even where that notice had no file.
+    document_ref = next((r for r in refs if carries_a_document(r)), primary)
+    notice_url = document_ref.get("url") or primary.get("url") or ""
+    document_url = document_ref.get("document_url") or ""
+    if document_url.rstrip("/") in {p.rstrip("/") for p in (portal_url, listing_url) if p}:
+        document_url = ""
     # The reference the authority published the notice under, when the portal
     # states one. Otherwise the capture's own id.
     reference = primary.get("reference") or primary.get("native_id") or ""
-    portal_url = src.url if src else ""
-    listing_url = src.listing_url if src else ""
 
     extra = []
     for ref in refs[1:]:

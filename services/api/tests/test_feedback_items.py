@@ -154,6 +154,55 @@ def test_a_non_ntdc_record_is_left_alone(client):
         db.close()
 
 
+def test_a_tender_published_under_several_notices_opens_a_document(client):
+    """The link opens a document, even when the first notice had no file.
+
+    A tender published under more than one notice keeps every one of them.
+    The reference comes from the first, but the link that opens the tender
+    must come from a notice that actually carries a document.
+    """
+    from app.serializers import source_attribution
+
+    class _Src:
+        url = "https://ntdc.gov.pk/"
+        listing_url = "https://ntdc.gov.pk/tendors"
+        code = "ntdc"
+        name = "NTDC Tenders"
+        authority = ""
+        tier = "P1"
+        access = "public"
+        type = "portal"
+        health = "ok"
+        last_scan_at = None
+        last_scan_stats = {}
+
+    class _Opp:
+        source = _Src()
+        source_refs = [
+            {
+                "source_code": "ntdc",
+                "native_id": "ntdc-4425",
+                "url": "https://ntdc.gov.pk",
+                "document_url": "https://ntdc.gov.pk",
+                "reference": "NGC/48/2026-27",
+            },
+            {
+                "source_code": "ntdc",
+                "native_id": "ntdc-4410",
+                "url": "https://ntdc.gov.pk/bidding/IFB_033139_6aa16fcba5604.pdf",
+                "document_url": "https://ntdc.gov.pk/bidding/IFB_033139_6aa16fcba5604.pdf",
+                "reference": "NGC/48/2026-27",
+            },
+        ]
+
+    info = source_attribution(_Opp())
+    assert info["notice_url"].endswith("IFB_033139_6aa16fcba5604.pdf")
+    assert info["document_url"].endswith("IFB_033139_6aa16fcba5604.pdf")
+    assert info["reference"] == "NGC/48/2026-27"
+    # The portal's own address is not a document.
+    assert info["document_url"] != "https://ntdc.gov.pk"
+
+
 def test_a_tender_that_aged_out_of_the_window_still_opens_its_own_file(client):
     """The portal keeps the tender's file; only the window moves.
 
