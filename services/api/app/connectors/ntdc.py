@@ -329,9 +329,13 @@ class NTDCConnector(BaseConnector):
 
         The feed returns a site-root path such as "/bidding/IFB ....pdf"; the
         documents are served from the site root itself.
+
+        A notice that published no file has no document, and says so with an
+        empty string. Returning the site root instead would leave a link
+        that opens the home page and reads as if a document had been found.
         """
         if not path:
-            return self.DOCUMENT_BASE
+            return ""
         if path.startswith("http://") or path.startswith("https://"):
             return path
         # The published file names carry spaces, brackets and the occasional

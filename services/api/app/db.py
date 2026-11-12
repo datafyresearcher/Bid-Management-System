@@ -228,6 +228,10 @@ def backfill_ntdc_notice_links():
                     updated.append(ref)
                     continue
                 document = ref.get("document_url") or ""
+                if document.rstrip("/") in {base.rstrip("/"), listing.rstrip("/")} - {""}:
+                    # A capture that fell back to the portal's own address
+                    # carries no document. It must not be offered as one.
+                    document = ""
                 if document.startswith(base):
                     target = base + encode_path(document[len(base):])
                 elif document:

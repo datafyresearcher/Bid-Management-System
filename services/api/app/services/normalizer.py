@@ -274,6 +274,9 @@ def refresh_document_links(db, source, index: dict) -> int:
     if not index:
         return 0
 
+    base = (getattr(source, "url", "") or "").rstrip("/")
+    listing = (getattr(source, "listing_url", "") or "").rstrip("/")
+
     rows = db.execute(
         select(Opportunity.id, Opportunity.source_refs).where(Opportunity.source_id == source.id)
     ).all()
@@ -292,9 +295,25 @@ def refresh_document_links(db, source, index: dict) -> int:
                 updated.append(ref)
                 continue
             document = entry.get("document_url") or ""
+            if document.rstrip("/") in {base, listing} - {""}:
+                document = ""
             related = entry.get("related_documents") or []
             if not document:
-                updated.append(ref)
+                # The portal publishes no file for this notice. The link that
+                # was captured for it may have been the portal's own address,
+                # which opens the home page; the listing is the only place
+                # this notice can be seen.
+                fresh = dict(ref)
+                changed = False
+                if fresh.get("url") == base:
+                    fresh["url"] = listing
+                    changed = True
+                if fresh.get("document_url"):
+                    fresh["document_url"] = ""
+                    changed = True
+                if changed:
+                    dirty = True
+                updated.append(fresh)
                 continue
             fresh = dict(ref)
             changed = False
