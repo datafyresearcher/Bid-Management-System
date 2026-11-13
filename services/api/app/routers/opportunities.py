@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -17,6 +17,16 @@ from app.services.utils import detect_currency, parse_date, source_id_for_code, 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
 
 MAX_UPLOAD = 30 * 1024 * 1024
+
+# The score a tender needs to sit at the top of the priority-ordered list:
+# the bidding team's second feedback point. Active tenders scoring above
+# this are the ones worth looking at first; everything else follows.
+PRIORITY_SCORE = 70
+
+# States that take a tender out of the running — screened out by the system,
+# filed away, or decided. A tender in none of these and still inside its
+# submission window is active.
+PRIORITY_EXCLUDED_STATES = ("SCREENED_OUT", "AUTO_ARCHIVED", *DECIDED_STATES)
 
 
 class OverrideIn(BaseModel):
@@ -116,6 +126,32 @@ def list_opportunities(
         query = query.order_by(Opportunity.submission_deadline.is_(None), Opportunity.submission_deadline)
     elif sort == "score":
         query = query.order_by(Opportunity.score_total.desc())
+    elif sort == "priority":
+        # The bidding team's second request: by default, the tenders still
+        # worth bidding — active, and scoring above the priority bar — stand
+        # at the top of the list, best score first. Everything else follows,
+        # strongest first, so the working queue and the archive are one list
+        # in a sensible order rather than two screens.
+        high_rank = case(
+            (
+                and_(
+                    Opportunity.state.notin_(list(PRIORITY_EXCLUDED_STATES)),
+                    or_(
+                        Opportunity.submission_deadline == None,  # noqa: E711
+                        Opportunity.submission_deadline > utcnow(),
+                    ),
+                    Opportunity.score_total > PRIORITY_SCORE,
+                ),
+                0,
+            ),
+            else_=1,
+        )
+        query = query.order_by(
+            high_rank.asc(),
+            Opportunity.score_total.desc().nullslast(),
+            Opportunity.submission_deadline.asc().nullslast(),
+            Opportunity.created_at.desc(),
+        )
     else:
         query = query.order_by(Opportunity.created_at.desc())
     items = db.execute(query.offset((page - 1) * page_size).limit(page_size)).scalars().all()

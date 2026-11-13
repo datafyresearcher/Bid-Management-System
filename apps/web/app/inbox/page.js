@@ -43,6 +43,9 @@ export default function InboxPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [state, setState] = useState(STATES[0][0]);
+  // The bidding team's default: active tenders scoring above 70 stand at
+  // the top, best score first; everything else follows by strength.
+  const [sort, setSort] = useState("priority");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -59,6 +62,7 @@ export default function InboxPage() {
     });
     if (state) params.set("state", state);
     if (q) params.set("q", q);
+    params.set("sort", sort);
     const url = `/api/opportunities?${params.toString()}`;
     if (!hydrated.current) {
       const cached = cacheGet(url);
@@ -77,12 +81,12 @@ export default function InboxPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [state, q, page, pageSize]);
+  }, [state, q, sort, page, pageSize]);
 
   // A new filter is a new view, so it starts at the first page.
   useEffect(() => {
     setPage(1);
-  }, [state, q, pageSize]);
+  }, [state, q, sort, pageSize]);
 
   useEffect(() => {
     load();
@@ -162,6 +166,15 @@ export default function InboxPage() {
             {STATES.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
+          </select>
+        </div>
+        <div>
+          <label>Sort</label>
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="priority">Priority — active, score above 70 first</option>
+            <option value="deadline">Closing date</option>
+            <option value="score">Score</option>
+            <option value="created">Newest</option>
           </select>
         </div>
         <div>

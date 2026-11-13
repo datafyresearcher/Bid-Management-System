@@ -17,6 +17,7 @@ const NAV = [
   ["/", "Dashboard", "grid"],
   ["/inbox", "Tender Inbox", "inbox"],
   ["/pipeline", "Pipeline", "funnel"],
+  ["/calendar", "Schedule", "calendar"],
   ["/review", "Review Queue", "clipboard"],
   ["/leads", "Leads Radar", "radar"],
   ["/kb", "Knowledge Base", "book"],
@@ -43,6 +44,13 @@ const ICON_PATHS = {
   funnel: (
     <>
       <path d="M3.2 4.8h17.6l-6.9 8.1v6.3l-3.8 1.9v-8.2L3.2 4.8Z" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="1.8" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="M7.5 13.5h3M13.5 13.5h3M7.5 17h3" />
     </>
   ),
   clipboard: (

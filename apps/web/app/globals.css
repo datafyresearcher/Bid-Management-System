@@ -1985,3 +1985,80 @@ label {
     min-height: 64vh;
   }
 }
+
+  /* --- tender schedule (calendar) ----------------------------------- */
+  .calendar-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .calendar-weekday {
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .calendar-day {
+    min-height: 104px;
+    padding: 8px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+  .calendar-day:nth-child(7n) {
+    border-right: none;
+  }
+  .calendar-empty {
+    background: var(--card-2);
+  }
+  .calendar-past {
+    color: var(--faint);
+    background: var(--card-2);
+  }
+  .calendar-today {
+    box-shadow: inset 0 0 0 2px var(--accent-soft);
+  }
+  .calendar-date {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-strong);
+    margin-bottom: 6px;
+  }
+  .calendar-past .calendar-date {
+    color: var(--faint);
+  }
+  .calendar-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-bottom: 4px;
+    text-decoration: none;
+    color: var(--text);
+    border-radius: 6px;
+    padding: 3px 4px;
+  }
+  .calendar-entry:hover {
+    background: var(--accent-soft);
+  }
+  .calendar-entry .score-pill {
+    flex: none;
+    font-size: 11px;
+  }
+  .calendar-title {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .calendar-more {
+    font-size: 11px;
+    color: var(--muted);
+    padding-left: 4px;
+  }

@@ -12,16 +12,28 @@ import { api, cacheGet, cacheSet } from "./api";
  * The URLs below must build the exact same strings the pages use as cache
  * keys (same URLSearchParams code, same order), or the warm entries would
  * never be read. Keep in sync with:
- *   app/inbox/page.js · app/pipeline/page.js · app/review/page.js ·
- *   app/leads/page.js · app/kb/page.js · app/admin/page.js
+ *   app/inbox/page.js · app/pipeline/page.js · app/calendar/page.js ·
+ *   app/review/page.js · app/leads/page.js · app/kb/page.js ·
+ *   app/admin/page.js
  */
 function defaultUrls(role) {
   const inbox = new URLSearchParams({ page: "1", page_size: "50" });
+  inbox.set("sort", "priority");
 
   const pipelineState =
     "GATE1,GATE2,GATE3,GATE4,GATE5,DOCS_FETCHED,ANALYZED,DRAFTING,ASSEMBLY,READY_TO_SUBMIT,SUBMITTED,EVALUATION";
   const pipeline = new URLSearchParams({ page: "1", page_size: "100", sort: "deadline" });
   pipeline.set("state", pipelineState);
+
+  // The schedule's default month view: active tenders scoring above 70.
+  const calendar = new URLSearchParams({
+    page: "1",
+    page_size: "100",
+    deadline: "open",
+    sort: "deadline",
+  });
+  calendar.set("state", "NEW,NORMALIZED,SCORED,GATE1,GATE2,GATE3,GATE4,GATE5,DOCS_FETCHED,ANALYZED,DRAFTING,ASSEMBLY,READY_TO_SUBMIT,SUBMITTED,EVALUATION");
+  calendar.set("min_score", "70");
 
   const review = new URLSearchParams({ status: "PENDING,OVERDUE", limit: "50", offset: "0" });
   const reviewCount = new URLSearchParams({ status: "PENDING,OVERDUE" });
@@ -29,6 +41,7 @@ function defaultUrls(role) {
   const urls = [
     `/api/opportunities?${inbox.toString()}`, // Tender Inbox
     `/api/opportunities?${pipeline.toString()}`, // Bid Pipeline
+    `/api/opportunities?${calendar.toString()}`, // Tender Schedule
     `/api/gates?${review.toString()}`, // Review Queue
     `/api/gates/count?${reviewCount.toString()}`,
     `/api/leads?${new URLSearchParams().toString()}`, // Leads Radar
