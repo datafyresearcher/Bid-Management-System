@@ -427,3 +427,16 @@ def test_a_long_document_is_read_only_to_its_ceiling(db, epms_source, monkeypatc
     assert doc.size == len(content)
     assert "stopped at page 4 of 5" in doc.content_text
     assert "on file whole" in doc.content_text
+
+
+def test_text_read_out_of_a_document_carries_no_null_bytes(db, epms_source):
+    """A reader that emits NUL bytes does not stop the document being stored.
+
+    pypdf picking through an Urdu scan emits them, and the database refuses a
+    text field that carries one — the whole hand-over used to fail with a
+    500 on such a file. The bytes mean nothing; they are dropped.
+    """
+    from app.services import documents
+
+    assert "\x00" not in documents.extract_text("scan.txt", b"line\x00with null\n")
+    assert "\x00" not in documents.extract_text("scan.txt", b"clean line\n")

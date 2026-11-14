@@ -127,19 +127,24 @@ def extract_text(filename: str, content: bytes) -> str:
                     pages.append(f"[Document read stopped at page {index + 1} of {len(reader.pages)} — the time budget for reading ran out. The file is on file whole.]")
                     break
                 pages.append(page.extract_text() or "")
-            return PAGE_BREAK.join(pages)[:400_000]
-        if name.endswith(".docx"):
+            text = PAGE_BREAK.join(pages)
+        elif name.endswith(".docx"):
             from docx import Document as DocxDocument
 
             doc = DocxDocument(io.BytesIO(content))
-            return PAGE_BREAK.join(p.text for p in doc.paragraphs)[:400_000]
-        if name.endswith((".html", ".htm")):
+            text = PAGE_BREAK.join(p.text for p in doc.paragraphs)
+        elif name.endswith((".html", ".htm")):
             from bs4 import BeautifulSoup
 
-            return BeautifulSoup(content.decode("utf-8", errors="ignore"), "html.parser").get_text(" ")[:400_000]
-        return content.decode("utf-8", errors="ignore")[:400_000]
+            text = BeautifulSoup(content.decode("utf-8", errors="ignore"), "html.parser").get_text(" ")
+        else:
+            text = content.decode("utf-8", errors="ignore")
     except Exception as exc:
         return f"[PARSE_ERROR] {exc}"
+    # A reader can emit NUL bytes — pypdf picking through an Urdu scan does —
+    # and the database refuses a text field that carries one. The bytes mean
+    # nothing in either place; they are dropped.
+    return text.replace("\x00", "")[:400_000]
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
