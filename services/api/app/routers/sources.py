@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.models import Opportunity, Source, User
@@ -11,6 +11,14 @@ from app.serializers import source as source_serializer
 from app.services import audit, jobs
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
+
+# How many tenders the bridge is asked to carry documents for in one call.
+# Every Stage-1 tender on a bridge-fed portal waits in this queue, and the
+# queue can run to hundreds; answering with all of them at once would keep
+# the request over its time budget, and the desk's machine would spend its
+# whole run downloading for hours. A batch keeps the request light and the
+# work self-pacing — what is left waits for the next run, four hours on.
+DOCUMENTS_PENDING_BATCH = 40
 
 
 def _require_capture_secret(provided: str) -> None:
@@ -224,8 +232,10 @@ def documents_pending(x_capture_secret: str = Header(default=""), db: Session = 
     rows = (
         db.execute(
             select(Opportunity)
+            .options(selectinload(Opportunity.documents))
             .where(Opportunity.documents_status == documents_service.AWAITING_BRIDGE)
             .order_by(Opportunity.id)
+            .limit(DOCUMENTS_PENDING_BATCH)
         )
         .scalars()
         .all()
