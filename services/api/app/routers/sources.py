@@ -268,6 +268,10 @@ def documents_pending(x_capture_secret: str = Header(default=""), db: Session = 
         )
     if settled:
         db.commit()
+    # A hand-over that ran out of time left its document on file and its
+    # analysis undone. This sweep finishes those — as many as the request can
+    # afford — before the queue of documents still to fetch is answered.
+    documents_service.sweep_due_analyses(db)
     return pending
 
 
@@ -327,21 +331,37 @@ def capture_document(
     # was refused and carry it over again, and the record would be left
     # looking half-done. Whatever was read before the failure is already on
     # the record, the next re-analyse picks the rest up, and what went wrong
-    # is kept in the audit trail.
+    # is kept in the audit trail. Nor is the analysis attempted when the
+    # request has nearly spent its time — a hand-over killed at the limit
+    # would be exactly that failure — so it is deferred, and the bridge's
+    # next call sweeps it up.
     analysis_error = ""
-    try:
-        result = workflow.reanalyze(db, opp)
-    except Exception as exc:
-        db.rollback()
-        result = None
-        analysis_error = str(exc)[:300]
+    from app import runtime
+
+    result = None
+    if runtime.remaining(default=60.0) < documents_service.ANALYSIS_MIN_SECONDS:
+        analysis_error = "deferred — the request was out of time; the analysis runs on the next bridge call"
         audit.record(
             db,
-            "document.analysis_failed",
+            "document.analysis_deferred",
             actor="capture bridge",
             opportunity_id=opp.id,
-            detail={"filename": filename, "error": analysis_error},
+            detail={"filename": filename},
         )
+    else:
+        try:
+            result = workflow.reanalyze(db, opp)
+        except Exception as exc:
+            db.rollback()
+            result = None
+            analysis_error = str(exc)[:300]
+            audit.record(
+                db,
+                "document.analysis_failed",
+                actor="capture bridge",
+                opportunity_id=opp.id,
+                detail={"filename": filename, "error": analysis_error},
+            )
     db.refresh(opp)
     audit.record(
         db,

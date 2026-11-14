@@ -2,10 +2,11 @@ import io
 import re
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
+from sqlalchemy.orm import selectinload
 
 from app.config import storage_path
-from app.models import Document, DocumentChunk
+from app.models import Document, DocumentChunk, Opportunity
 from app.services import audit
 
 DOC_TYPE_KEYWORDS = [
@@ -54,6 +55,13 @@ MAX_INLINE_BYTES = 20_000_000
 # deadline; the tender's documents are then fetched when its Stage 1 decision
 # runs the full analysis.
 STAGE1_FETCH_MIN_SECONDS = 15.0
+
+# The analysis that follows a hand-over — reading the document out, extracting
+# the requirements, building the checklist — takes real seconds, and the
+# request that carried the file over has a hard limit. Below this much
+# remaining, the analysis is deferred to the bridge's next call rather than
+# let the whole hand-over be killed with the record half-done.
+ANALYSIS_MIN_SECONDS = 25.0
 
 # The document type given to the notice a buyer publishes to announce the
 # tender, as opposed to the bidding document that carries the terms.
@@ -567,6 +575,58 @@ def ensure_stage1_documents(db, opp) -> None:
             opportunity_id=opp.id,
             detail={"error": str(exc)[:200]},
         )
+
+
+def sweep_due_analyses(db) -> int:
+    """Finish the analyses a hand-over had to defer.
+
+    A document carried over in a request that was running out of time is on
+    file but unread — no requirements, no figures — and nothing in the
+    ordinary flow would pick it up: the record is no longer waiting for a
+    document, and the analysis runs on its own only when the Stage 1 decision
+    is taken. The bridge's call sweeps those records here, as many as the
+    request can still afford, before asking for more documents.
+    """
+    from app import runtime
+    from app.services import workflow
+
+    from app.serializers import FINAL_STATES
+
+    handled: set[int] = set()
+    done = 0
+    while True:
+        left = runtime.remaining()
+        if left is not None and left < ANALYSIS_MIN_SECONDS:
+            break
+        conditions = [
+            Opportunity.documents_status == "uploaded",
+            or_(Opportunity.extraction_grade == "", Opportunity.extraction_grade.is_(None)),
+            Opportunity.state.not_in(tuple(FINAL_STATES)),
+        ]
+        if handled:
+            conditions.append(Opportunity.id.not_in(sorted(handled)))
+        opp = (
+            db.execute(
+                select(Opportunity)
+                .options(selectinload(Opportunity.documents))
+                .where(*conditions)
+                .order_by(Opportunity.id)
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if opp is None:
+            break
+        handled.add(opp.id)
+        try:
+            workflow.reanalyze(db, opp)
+            done += 1
+        except Exception:
+            # One record that will not analyse must not eat the sweep; it is
+            # left for the Stage 1 decision, which runs the analysis again.
+            db.rollback()
+    return done
 
 
 def search_chunks(db, opportunity_id: int, query: str, limit: int = 5):

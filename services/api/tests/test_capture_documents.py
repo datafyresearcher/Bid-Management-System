@@ -362,3 +362,126 @@ def test_a_tender_whose_analysis_was_interrupted_carries_on(client, db, auth, li
         .first()
     )
     assert second is not None, "the tender must not be stranded at Stage 1"
+
+
+def test_a_hand_over_out_of_time_keeps_the_file_and_defers_the_analysis(
+    client, db, auth, live_mode, monkeypatch
+):
+    """The file lands even when the request cannot afford the analysis.
+
+    A hand-over whose request has nearly spent its time used to carry on into
+    the analysis and be killed at the limit — the bridge saw a gateway
+    timeout and carried the same file over again. Now the analysis is
+    deferred, the hand-over answers, and the sweep on the next bridge call
+    finishes what was left undone.
+    """
+    from app import runtime
+    from app.models import Opportunity
+    from app.services import documents as documents_service
+    from app.services import workflow
+
+    opp_id = _capture_one(client, auth, "Deferred analysis tender", "notice-def1", "bidding-def1")
+    opp = db.get(Opportunity, opp_id)
+    workflow.run_analysis(db, opp)
+    db.refresh(opp)
+
+    calls = []
+    monkeypatch.setattr(runtime, "remaining", lambda default=None: 5.0)
+    monkeypatch.setattr(
+        workflow, "reanalyze", lambda db_, o: calls.append(o.id) or (_ for _ in ()).throw(AssertionError("must not run"))
+    )
+
+    resp = client.post(
+        "/api/sources/capture/document",
+        data={
+            "opportunity_id": str(opp_id),
+            "filename": "bidding-def1.pdf",
+            "kind": "bidding document",
+            "source_url": "https://eproc.punjab.gov.pk/BiddingDocuments/bidding-d1.pdf",
+        },
+        files={"file": ("bidding-def1.pdf", b"%PDF-1.4 " + BIDDING_TEXT.encode(), "application/pdf")},
+        headers={"X-Capture-Secret": SECRET},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "deferred" in body["analysis_error"]
+    assert calls == [], "the analysis must not have been attempted"
+
+    db.expire_all()
+    opp = db.get(Opportunity, opp_id)
+    assert opp.documents_status == "uploaded"
+    assert any(d.filename == "bidding-def1.pdf" for d in opp.documents)
+    # The figures wait in the document's text until the deferred analysis
+    # reads them — nothing is claimed from an unread document.
+    assert opp.bid_security_percent is None
+
+
+def test_the_bridge_call_sweeps_an_analysis_that_was_deferred(db, monkeypatch):
+    """A record carrying its documents but unread is finished on the next call."""
+    from app import runtime
+    from app.models import Opportunity
+    from app.services import documents as documents_service
+
+    opp = make_analysed_placeholder_opportunity(db)
+    documents_service.save_document(
+        db, opp, "bidding-s1.txt", BIDDING_TEXT.encode("utf-8"), source_url="https://eproc.punjab.gov.pk/BiddingDocuments/bidding-sweep1.pdf"
+    )
+    documents_service.drop_placeholder_summary(db, opp)
+    opp.documents_status = "uploaded"
+    opp.extraction_grade = ""
+    db.commit()
+
+    analysed = []
+    monkeypatch.setattr(runtime, "remaining", lambda default=None: 100.0)
+
+    def fake_reanalyze(db_, o):
+        analysed.append(o.id)
+        o.extraction_grade = "B"
+        db_.commit()
+        return {}
+
+    from app.services import workflow
+
+    monkeypatch.setattr(workflow, "reanalyze", fake_reanalyze)
+
+    assert documents_service.sweep_due_analyses(db) == 1
+    assert analysed == [opp.id]
+
+    # Once the record has been read it is not swept again, and a request out
+    # of time sweeps nothing at all.
+    assert documents_service.sweep_due_analyses(db) == 0
+    monkeypatch.setattr(runtime, "remaining", lambda default=None: 5.0)
+    opp2 = make_analysed_placeholder_opportunity(db)
+    documents_service.save_document(db, opp2, "bidding-s2.txt", BIDDING_TEXT.encode("utf-8"))
+    opp2.documents_status = "uploaded"
+    opp2.extraction_grade = ""
+    db.commit()
+    assert documents_service.sweep_due_analyses(db) == 0
+
+
+def make_analysed_placeholder_opportunity(db):
+    """A tender at Stage 1 whose documents arrived but were never read."""
+    from app.models import Opportunity, Source
+
+    source = db.query(Source).filter(Source.code == "ppra_punjab").first()
+    opp = Opportunity(
+        title="Sweep analysis tender",
+        buyer_name="A Punjab buyer",
+        buyer_ref="SWEEP-1",
+        state="GATE1",
+        documents_status="uploaded",
+        source_refs=[
+            {
+                "source_id": source.id,
+                "source_code": source.code,
+                "native_id": "ppra-sweep-1",
+                "url": "https://eproc.punjab.gov.pk/BiddingDocuments/bidding-s1.pdf",
+                "document_url": "https://eproc.punjab.gov.pk/BiddingDocuments/bidding-s1.pdf",
+            }
+        ],
+    )
+    db.add(opp)
+    db.commit()
+    db.refresh(opp)
+    return opp
