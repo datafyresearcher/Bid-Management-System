@@ -230,6 +230,64 @@ def backfill_opportunity_sources():
         session.close()
 
 
+def backfill_stage1_bridge_documents():
+    """Hand the bridge every Stage-1-pending tender whose portal it must read.
+
+    The notice and the bidding document are fetched while Stage 1 is being
+    decided, and for the portals that refuse datacenter connections that
+    means the record is marked for the capture bridge the moment its review
+    opens. Records whose review opened before that rule existed were never
+    marked, so they wait for their documents until the decision is taken.
+    This marks them too, once, on start-up: pending at Stage 1, fed by a
+    bridge portal, and carrying no document yet.
+    """
+    from sqlalchemy import select
+
+    from app.config import settings
+    from app.models import GateTask, Opportunity
+    from app.source_registry import BRIDGE_FED_SOURCES
+    from app.services import documents as documents_service
+
+    if settings.fixtures:
+        return 0
+
+    session = SessionLocal()
+    try:
+        rows = (
+            session.execute(
+                select(Opportunity)
+                .join(GateTask, GateTask.opportunity_id == Opportunity.id)
+                .where(
+                    GateTask.gate == 1,
+                    GateTask.status.in_(["PENDING", "OVERDUE"]),
+                    Opportunity.documents_status.in_(["none", "metadata_only"]),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        marked = 0
+        for opp in rows:
+            codes = {
+                ref.get("source_code")
+                for ref in (opp.source_refs or [])
+                if isinstance(ref, dict) and ref.get("source_code")
+            }
+            if not (codes & set(BRIDGE_FED_SOURCES)):
+                continue
+            if documents_service.mark_awaiting_bridge(session, opp):
+                marked += 1
+        if marked:
+            logger.info("Backfilled %s Stage-1 tenders as awaiting the bridge", marked)
+        return marked
+    except Exception as exc:
+        logger.warning("Stage-1 bridge backfill skipped: %s", exc)
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
 def backfill_ntdc_notice_links():
     """Point every NTDC tender's notice link at the tender itself.
 
@@ -440,4 +498,5 @@ def init_db():
     backfill_opportunity_sources()
     backfill_ntdc_notice_links()
     backfill_derived_document_links()
+    backfill_stage1_bridge_documents()
     reword_notifications()
