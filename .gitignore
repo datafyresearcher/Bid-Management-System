@@ -37,3 +37,5 @@ Thumbs.db
 
 # The capture bridge's local config carries its secret
 tools/ppra-bridge/config.json
+# Its local run log
+tools/ppra-bridge/bridge.log*

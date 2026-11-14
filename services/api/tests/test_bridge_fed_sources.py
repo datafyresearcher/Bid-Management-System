@@ -1,8 +1,8 @@
 """A portal the cloud cannot reach is fed by the bridge, and never read live.
 
-PPRA Punjab and WAPDA refuse connections from datacenter networks as a class
-— no scan from any cloud region can read them. The bid desk's own machine
-captures their listings and hands the pages to POST /api/sources/capture.
+PPRA Punjab, WAPDA and NTDC refuse connections from datacenter networks as a
+class — no scan from any cloud region can read them. The bid desk's own
+machine captures what they publish and hands it to POST /api/sources/capture.
 Every cloud-side read path must therefore leave these sources alone: a live
 attempt cannot succeed, and recording its failure would stamp a healthy,
 bridge-fed source as error and hide the bridge's work.
@@ -12,14 +12,16 @@ import pytest
 
 from app.config import settings
 
+BRIDGE_CODES = ("ppra_punjab", "wapda", "ntdc")
+
 
 @pytest.fixture(autouse=True)
 def bridge_sources(db):
-    """Both bridge-fed portals start healthy, fed by a fresh bridge capture."""
+    """All bridge-fed portals start healthy, fed by a fresh bridge capture."""
     from app.models import Source
     from app.services.utils import utcnow
 
-    for code in ("ppra_punjab", "wapda"):
+    for code in BRIDGE_CODES:
         source = db.query(Source).filter(Source.code == code).first()
         assert source is not None, f"{code} missing from the registry"
         source.health = "ok"
@@ -41,7 +43,7 @@ def test_run_scan_leaves_bridge_fed_portals_alone(db, live_mode, monkeypatch):
     from app.services import jobs
 
     def fake_run_source(db, source, **kwargs):
-        if source.code in ("ppra_punjab", "wapda"):
+        if source.code in BRIDGE_CODES:
             raise AssertionError("a bridge-fed portal must never be read live")
         return {"notices": 0, "new": 0, "scored": 0}
 
@@ -49,8 +51,8 @@ def test_run_scan_leaves_bridge_fed_portals_alone(db, live_mode, monkeypatch):
 
     stats = jobs.run_scan(db)
 
-    assert stats["skipped"] >= 2
-    for code in ("ppra_punjab", "wapda"):
+    assert stats["skipped"] >= len(BRIDGE_CODES)
+    for code in BRIDGE_CODES:
         source = db.query(Source).filter(Source.code == code).first()
         db.refresh(source)
         assert source.health == "ok"
@@ -101,10 +103,10 @@ def test_the_startup_read_skips_bridge_fed_portals(db, live_mode, monkeypatch):
     sources = db.query(Source).filter(Source.type == "portal").all()
     bootstrap.read_within_budget(db, sources, budget=60)
 
-    assert "ppra_punjab" not in read
-    assert "wapda" not in read
+    for code in BRIDGE_CODES:
+        assert code not in read
     assert read, "the cloud-readable portals were still read"
-    for code in ("ppra_punjab", "wapda"):
+    for code in BRIDGE_CODES:
         source = db.query(Source).filter(Source.code == code).first()
         db.refresh(source)
         assert source.health == "ok"
@@ -119,10 +121,11 @@ def test_the_dashboard_counts_what_the_bridge_feeds(client, db, auth):
     assert resp.status_code == 200, resp.text
     feed = resp.json()["feed_status"]
 
-    assert feed["portals_bridge"] == 2
+    assert feed["portals_bridge"] == len(BRIDGE_CODES)
     names = " ".join(feed["bridge_names"])
     assert "PPRA Punjab" in names
     assert "WAPDA" in names
+    assert "NTDC" in names
     read_ids = feed["portals_read_live"] + feed["portals_bridge"] + feed["portals_failed"] + feed["portals_never_read"]
     assert read_ids <= feed["portals_total"]
 
@@ -130,9 +133,8 @@ def test_the_dashboard_counts_what_the_bridge_feeds(client, db, auth):
     # the bridge's name instead of a Scan button that could never succeed.
     sources = client.get("/api/sources", headers=auth).json()
     by_code = {s["code"]: s for s in sources}
-    assert by_code["ppra_punjab"]["read_via"] == "bridge"
-    assert by_code["wapda"]["read_via"] == "bridge"
-    assert by_code["ntdc"]["read_via"] == "cloud"
+    for code in BRIDGE_CODES:
+        assert by_code[code]["read_via"] == "bridge", code
 
 
 def test_a_bridge_portal_that_has_gone_quiet_is_still_flagged(client, db, auth):
@@ -152,6 +154,6 @@ def test_a_bridge_portal_that_has_gone_quiet_is_still_flagged(client, db, auth):
     assert resp.status_code == 200, resp.text
     feed = resp.json()["feed_status"]
 
-    assert feed["portals_bridge"] == 1
+    assert feed["portals_bridge"] == len(BRIDGE_CODES) - 1
     assert feed["portals_failed"] >= 1
     assert "WAPDA" in " ".join(feed["failed_names"])

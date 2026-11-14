@@ -3,6 +3,12 @@
 NTDC's public site is an Angular application whose data comes from a public
 JSON endpoint: `/ntdc/api/tenders`. No session or key is involved, and the
 endpoint returns the whole tender history, so only recent records are taken.
+
+Since November 2026 the portal answers a datacenter connection with 403 —
+the same treatment PPRA Punjab and WAPDA give the cloud — so the feed is
+captured by the bid desk's bridge (tools/ppra-bridge) and parsed here through
+`parse_listing`. `_from_live` remains for the fixture reader and for the day
+the portal answers the cloud again.
 """
 
 import json
@@ -158,6 +164,32 @@ class NTDCConnector(BaseConnector):
         except json.JSONDecodeError:
             # The endpoint sometimes answers with a JSON array served as text.
             payload = json.loads(raw[raw.find("["):raw.rfind("]") + 1])
+        return self.parse_feed(payload)
+
+    def parse_listing(self, raw: str):
+        """Parse a feed the capture bridge carried over.
+
+        NTDC answers a datacenter connection with 403, so the feed is read on
+        the bid desk's machine and handed over whole. The bridge posts the
+        feed's JSON text exactly as the browser read it; the only wrinkle is
+        that Chrome displays a JSON document inside a small HTML shell when
+        it is pointed straight at one, so the JSON is cut out of any wrapper
+        before it is read. Everything after that is the same path a live read
+        takes — the same parser, normalizer and scorer.
+        """
+        if not raw:
+            return []
+        text = raw.strip()
+        if not text.startswith("[") and not text.startswith("{"):
+            starts = [i for i in (text.find("["), text.find("{")) if i != -1]
+            end = max(text.rfind("]"), text.rfind("}"))
+            if not starts or end <= starts[0]:
+                return []
+            text = text[starts[0]:end + 1]
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return []
         return self.parse_feed(payload)
 
     def parse_feed(self, payload):

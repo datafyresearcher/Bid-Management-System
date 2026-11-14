@@ -16,14 +16,16 @@ Columns per row:
 """
 
 # Portals that refuse connections from datacenter networks as a class — they
-# time out or reset the TCP/TLS open from every cloud region, while answering
-# the bid desk's own network happily. No scan from this deployment can ever
-# read them, however patient the client. They are fed instead by the capture
-# bridge (tools/ppra-bridge): the desk's machine opens the listing in a real
-# browser and posts the raw pages to POST /api/sources/capture. The scheduled
-# scan and the Scan button must never try to read these live — a read that
-# cannot connect would only stamp a healthy, bridge-fed source as error.
-BRIDGE_FED_SOURCES = ("ppra_punjab", "wapda")
+# time out, reset the TCP/TLS open, or answer 403, from every cloud region,
+# while answering the bid desk's own network happily. No scan from this
+# deployment can ever read them, however patient the client. They are fed
+# instead by the capture bridge (tools/ppra-bridge): the desk's machine opens
+# each listing in a real browser and posts what it reads to
+# POST /api/sources/capture. The scheduled scan and the Scan button must
+# never try to read these live — a read that cannot connect would only stamp
+# a healthy, bridge-fed source as error. NTDC used to answer the cloud and
+# joined the others in November 2026.
+BRIDGE_FED_SOURCES = ("ppra_punjab", "wapda", "ntdc")
 
 SOURCES = [
     (

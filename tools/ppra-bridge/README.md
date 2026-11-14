@@ -1,12 +1,14 @@
 # Capture bridge — the portals the cloud cannot reach
 
-`eproc.punjab.gov.pk` (PPRA Punjab) and `wapda.gov.pk` (WAPDA) refuse
-connections from every datacenter network, so the API — wherever it runs —
-can never read them directly. But the portals answer the bid desk's own
-network, and they answer a real browser. This bridge closes the gap: it opens
-each listing in this machine's installed Chrome, walks the pages, and posts
-the raw HTML to the API's capture endpoint, where it runs through the same
-parser, normalizer and scorer a live scan would use.
+`eproc.punjab.gov.pk` (PPRA Punjab), `wapda.gov.pk` (WAPDA) and `ntdc.gov.pk`
+(NTDC) refuse connections from every datacenter network, so the API — wherever
+it runs — can never read them directly. But the portals answer the bid desk's
+own network, and they answer a real browser. This bridge closes the gap: it
+opens each listing in this machine's installed Chrome, reads what it
+publishes, and posts it to the API's capture endpoint, where it runs through
+the same parser, normalizer and scorer a live scan would use. NTDC joined the
+other two in November 2026; its feed is read as JSON by the page the browser
+opens on the portal's own site.
 
 The portals it feeds are listed in `app/source_registry.py` as
 `BRIDGE_FED_SOURCES`; the API refuses to scan them live, so a failed cloud

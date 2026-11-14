@@ -91,7 +91,11 @@ export default function DashboardPage() {
       ? ` The other ${feed.records_other} are seeded demo records, not live tenders.`
       : "";
     const bridged = feed.portals_bridge
-      ? ` ${feed.portals_bridge} more (${feed.bridge_names.join(", ")}) arrive through the bid desk's capture bridge — the portal refuses datacenter connections, so the desk's own machine reads it and hands the pages over.`
+      ? ` ${feed.portals_bridge} more (${feed.bridge_names.join(", ")}) arrive through the bid desk's capture bridge — ${
+          feed.portals_bridge === 1
+            ? "that portal refuses datacenter connections, so the desk's own machine reads it and hands the pages over"
+            : "those portals refuse datacenter connections, so the desk's own machine reads them and hands the pages over"
+        }.`
       : "";
     const liveTail = `${other}${bridged}`;
     if (feed.portals_unreachable) {

@@ -1,12 +1,12 @@
 """Capture the portals the cloud cannot reach and hand them to the BMS API.
 
-Two of the authorized portals — eproc.punjab.gov.pk (PPRA Punjab) and
-wapda.gov.pk (WAPDA) — refuse connections from datacenter networks as a
-class: the cloud scan times out or is reset at the TLS open, from every
-region. But the portals answer the bid desk's own network happily, and they
-answer a real browser. This script opens each listing in the machine's
-installed Chrome, walks the pages, and posts the raw HTML to the API's
-capture endpoint, where it runs through the same parser, normalizer and
+Three of the authorized portals — eproc.punjab.gov.pk (PPRA Punjab),
+wapda.gov.pk (WAPDA) and ntdc.gov.pk (NTDC) — refuse connections from
+datacenter networks as a class: the cloud scan times out or is answered 403,
+from every region. But the portals answer the bid desk's own network happily,
+and they answer a real browser. This script opens each listing in the
+machine's installed Chrome, reads what it publishes, and posts it to the
+API's capture endpoint, where it runs through the same parser, normalizer and
 scorer a live scan would use.
 
 Setup, in tools/ppra-bridge:
@@ -67,6 +67,32 @@ def log(message: str):
         print(line, flush=True)
 
 
+def settled_content(page, previous: str | None = None, timeout_ms: int = 20_000) -> str:
+    """The page's HTML, read once the page has stopped navigating.
+
+    A portal whose next page arrives as a postback keeps replacing its own
+    content, and Playwright refuses to read the HTML while that is still in
+    flight — "Unable to retrieve content because the page is navigating" —
+    which is exactly what the old walk did the moment it looked too early.
+    The read is therefore retried until the page holds still, or until this
+    many milliseconds have passed.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        try:
+            html = page.content()
+        except Exception as exc:
+            if "navigating" not in str(exc).lower() or time.monotonic() > deadline:
+                raise
+            page.wait_for_timeout(250)
+            continue
+        if previous is None or html != previous:
+            return html
+        if time.monotonic() > deadline:
+            return html
+        page.wait_for_timeout(500)
+
+
 def pager_link(page, wanted: str):
     """The pager's link for a page number.
 
@@ -97,7 +123,7 @@ def capture_ppra(page) -> list[str]:
     page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=90_000)
     page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
     page.wait_for_timeout(1500)
-    pages.append(page.content())
+    pages.append(settled_content(page))
 
     # The pager is a row of numbered postback links. Walk them in order;
     # a page that repeats what we already have means the end.
@@ -114,15 +140,12 @@ def capture_ppra(page) -> list[str]:
             break
         page.wait_for_selector(GRID_SELECTOR, timeout=60_000)
         # The postback replaces the grid, and it does not always land within a
-        # fixed pause, so the new page is waited for rather than assumed.
-        html = page.content()
-        for _ in range(40):
-            if html != previous:
-                break
-            page.wait_for_timeout(500)
-            html = page.content()
+        # fixed pause, so the new page is waited for rather than assumed. The
+        # read itself waits out the navigation too — a read that lands while
+        # the postback is still in flight used to raise and end the walk.
+        html = settled_content(page, previous)
         if html == previous:
-            break
+            break  # the grid never changed — this pager link was the last page
         pages.append(html)
         log(f"captured page {len(pages)}")
     return pages
@@ -150,8 +173,41 @@ def capture_wapda(page) -> list[str]:
         if not links or not [l for l in links if l not in seen]:
             break
         seen.update(links)
-        pages.append(page.content())
+        pages.append(settled_content(page))
     return pages
+
+
+def capture_ntdc(page) -> list[str]:
+    """Read NTDC's tender feed in the desk's browser.
+
+    NTDC's site is an Angular application whose notices come from a public
+    JSON endpoint. The portal has joined PPRA Punjab and WAPDA in refusing
+    connections from datacenter networks — the cloud scan is answered 403
+    from every region — so the feed is read here instead. The browser opens
+    the portal's own tenders page first, and the page itself then fetches
+    the feed: same origin, real browser, the desk's network. The raw JSON
+    text is handed to the API, whose parser reads it exactly as a live scan
+    would.
+    """
+    LISTING_URL = "https://ntdc.gov.pk/tendors"
+    FEED_URL = "https://ntdc.gov.pk/ntdc/api/tenders"
+
+    log("opening the NTDC tenders page")
+    page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=90_000)
+    page.wait_for_timeout(2_000)
+    body = page.evaluate(
+        # The page's own fetch, not the browserless client: this request has
+        # to come from inside the browser to carry the portal's TLS expectations.
+        "async (url) => {"
+        "  const response = await fetch(url, {credentials: 'include'});"
+        "  if (!response.ok) { throw new Error('HTTP ' + response.status); }"
+        "  return await response.text();"
+        "}",
+        FEED_URL,
+    )
+    if not body or not body.strip():
+        raise RuntimeError("the feed came back empty")
+    return [body]
 
 
 # One capture routine per bridge-fed source, keyed by the source code the API
@@ -159,7 +215,13 @@ def capture_wapda(page) -> list[str]:
 CAPTURES = {
     "ppra_punjab": capture_ppra,
     "wapda": capture_wapda,
+    "ntdc": capture_ntdc,
 }
+
+# How many times a source's capture is attempted before the cycle gives up on
+# it. A postback that lands while the walk is reading, or a portal that blinks
+# once, should not cost the source its whole four-hour cycle.
+CAPTURE_ATTEMPTS = 2
 
 
 def submit(pages: list[str], config: dict, source_code: str) -> dict:
@@ -438,21 +500,33 @@ def main() -> int:
         # handshake is a real browser's, which is what these portals accept.
         # No browser download is needed for this.
         browser = p.chromium.launch(channel="chrome", headless=True)
-        page = browser.new_page()
         for code in sources:
-            try:
-                pages = CAPTURES[code](page)
-                if not pages:
-                    raise RuntimeError("nothing could be captured")
-                log(f"{code}: captured {len(pages)} page(s); submitting")
-                result = submit(pages, config, code)
-                log(
-                    "{source}: {notices} notices, {new} new, {scored} scored, health {health}".format(
-                        **result
+            captured = False
+            for attempt in range(1, CAPTURE_ATTEMPTS + 1):
+                # A fresh page per source, and per attempt. The portals share
+                # nothing: a postback that is still navigating when one
+                # capture gives up used to interrupt the next source's first
+                # navigation, because both walked the same tab — one failed
+                # listing took its neighbour's cycle down with it.
+                page = browser.new_page()
+                try:
+                    pages = CAPTURES[code](page)
+                    if not pages:
+                        raise RuntimeError("nothing could be captured")
+                    log(f"{code}: captured {len(pages)} page(s); submitting")
+                    result = submit(pages, config, code)
+                    log(
+                        "{source}: {notices} notices, {new} new, {scored} scored, health {health}".format(
+                            **result
+                        )
                     )
-                )
-            except Exception as exc:
-                log(f"{code} failed: {exc}")
+                    captured = True
+                    break
+                except Exception as exc:
+                    log(f"{code} failed (attempt {attempt} of {CAPTURE_ATTEMPTS}): {exc}")
+                finally:
+                    page.close()
+            if not captured:
                 failures += 1
         browser.close()
 

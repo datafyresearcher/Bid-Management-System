@@ -293,6 +293,27 @@ def test_ntdc_reads_the_feed():
         assert notice["url"].startswith("https://ntdc.gov.pk/"), notice
 
 
+def test_ntdc_reads_a_feed_the_bridge_brought_over():
+    """The bridge's capture is parsed exactly like a live read.
+
+    The portal refuses datacenter connections, so this parse is how live
+    records arrive now: the feed's JSON text as the browser read it — which,
+    when the browser is pointed straight at a JSON document, comes wrapped
+    in a small HTML shell. Both shapes must read the same, and nonsense must
+    read as nothing rather than raise.
+    """
+    payload = json.loads(golden("ntdc.json"))
+    direct = ntdc().parse_listing(json.dumps(payload))
+    assert direct == ntdc().parse_feed(payload)
+    assert direct
+
+    wrapped = f"<html><head></head><body><pre>{json.dumps(payload)}</pre></body></html>"
+    assert ntdc().parse_listing(wrapped) == direct
+
+    assert ntdc().parse_listing("") == []
+    assert ntdc().parse_listing("<html><body>not json at all</body></html>") == []
+
+
 def test_ntdc_leaves_the_closing_date_empty():
     payload = json.loads(golden("ntdc.json"))
     notices = ntdc().parse_feed(payload)
