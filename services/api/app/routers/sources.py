@@ -297,7 +297,13 @@ def capture_document(
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Document too large")
 
-    documents_service.save_document(db, opp, filename or "document.pdf", content, source_url=source_url)
+    # The bridge says which family a file belongs to — the bidding document,
+    # the tender notice, a correction — and that is the type it is filed
+    # under, rather than a guess from its name.
+    doc_type = "Tender notice" if (kind or "").strip().lower() == "notice" else ""
+    documents_service.save_document(
+        db, opp, filename or "document.pdf", content, source_url=source_url, doc_type=doc_type
+    )
     # The stand-in written when nothing could be fetched is dropped now that
     # the real document has arrived, so the analysis reads the document and
     # not the summary of it.

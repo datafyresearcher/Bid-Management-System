@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  api, cacheGet, cacheSet, CHECKLIST_STATUSES, checklistStatusLabel, daysTo, DECISIONS, documentsStatusLabel,
+  api, apiDownload, cacheGet, cacheSet, CHECKLIST_STATUSES, checklistStatusLabel, daysTo, DECISIONS, documentsStatusLabel,
   fmtDate, fmtDateTime, fmtMoney, complianceStatusLabel, decisionLabel, gateStatusLabel, RELATED_KIND_LABELS, sectionStatusLabel,
   severityClass, stateClass, stateLabel, STAGE_LABELS, submissionStatusLabel,
 } from "../../../lib/api";
@@ -117,6 +117,14 @@ export default function OpportunityPage() {
       "Document uploaded and parsed"
     );
     setFiles([]);
+  };
+
+  const openStored = async (doc) => {
+    try {
+      await apiDownload(`/api/opportunities/${id}/documents/${doc.id}/download`, doc.filename);
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const saveSection = async (section, content) => {
@@ -500,22 +508,43 @@ export default function OpportunityPage() {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Pages</th><th>Read</th><th>Added</th></tr></thead>
+              <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Pages</th><th>Read</th><th>Added</th><th>Verify on portal</th></tr></thead>
               <tbody>
                 {opp.documents.map((doc) => (
                   <tr key={doc.id}>
-                    <td data-label="File">{doc.filename}</td>
+                    <td data-label="File">
+                      {doc.has_file ? (
+                        <>
+                          <button className="btn small" onClick={() => openStored(doc)}>Open</button>{" "}
+                        </>
+                      ) : null}
+                      {doc.filename}
+                    </td>
                     <td data-label="Type">{doc.doc_type}</td>
                     <td data-label="Size">{Math.round((doc.size || 0) / 1024)} KB</td>
                     <td data-label="Pages">{doc.pages || "—"}</td>
                     <td data-label="Read">{doc.parsed ? "yes" : `no — ${doc.parse_status || ""}`}</td>
                     <td data-label="Added">{fmtDate(doc.created_at)}</td>
+                    <td data-label="Verify on portal">
+                      {doc.source_url ? (
+                        <a className="src-link" href={doc.source_url} target="_blank" rel="noreferrer noopener">
+                          Verify ↗
+                        </a>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
-                {opp.documents.length === 0 ? <tr><td colSpan="6" data-label="" className="muted">No documents yet.</td></tr> : null}
+                {opp.documents.length === 0 ? <tr><td colSpan="7" data-label="" className="muted">No documents yet.</td></tr> : null}
               </tbody>
             </table>
           </div>
+          <p className="muted">
+            Documents are fetched when the tender reaches Stage 1 — the notice the buyer published and the
+            bidding document itself — and kept here, each with the link to open it on the authority&apos;s own
+            site and confirm nothing was lost between the portal and this record.
+          </p>
         </div>
       ) : null}
 

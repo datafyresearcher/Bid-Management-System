@@ -302,6 +302,43 @@ def upload_document(opp_id: int, file: UploadFile = File(...), user: User = Depe
     return {"id": doc.id, "filename": doc.filename, "doc_type": doc.doc_type, "parsed": doc.parsed, "size": doc.size}
 
 
+@router.get("/{opp_id}/documents/{doc_id}/download")
+def download_document(opp_id: int, doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Hand back a tender document the system has stored.
+
+    The notice and the bidding document are on file so the bid team can open
+    them from the record — wherever the system runs, not only on the machine
+    that downloaded them. The disk copy is used when it is still there; the
+    copy kept in the database answers when it is not. Alongside the file, the
+    record carries the address the document was fetched from, so what the
+    system holds can always be checked against what the portal still
+    publishes.
+    """
+    import mimetypes
+    from pathlib import Path
+
+    from fastapi import Response
+    from fastapi.responses import FileResponse
+
+    doc = db.get(documents.Document, doc_id)
+    if not doc or doc.opportunity_id != opp_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    media_type = mimetypes.guess_type(doc.filename)[0] or "application/octet-stream"
+    if doc.file_path and Path(doc.file_path).exists():
+        return FileResponse(doc.file_path, filename=doc.filename, media_type=media_type)
+    if doc.data:
+        return Response(
+            content=bytes(doc.data),
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+        )
+    raise HTTPException(
+        status_code=404,
+        detail="The file is no longer on this deployment — its read text is kept, and the portal link on the record opens the original",
+    )
+
+
 @router.post("/{opp_id}/analyze")
 def analyze(opp_id: int, user: User = Depends(require_roles("bid_manager", "proposal_engineer")), db: Session = Depends(get_db)):
     opp = db.get(Opportunity, opp_id)

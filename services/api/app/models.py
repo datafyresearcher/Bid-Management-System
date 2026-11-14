@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -176,6 +177,13 @@ class Document(Base):
     parsed = Column(Boolean, default=False)
     parse_status = Column(String(200), default="")
     content_text = Column(Text)
+    # The file itself, kept in the database. The disk copy beside it lives on
+    # whatever filesystem the instance runs on — a serverless deployment's
+    # directory is swept between requests — so the bytes are kept here too,
+    # up to a size ceiling, and a document the bid team opens keeps opening
+    # wherever the system runs. A file past the ceiling is not carried here;
+    # it keeps its disk copy and its read text.
+    data = Column(LargeBinary)
     created_at = Column(DateTime, default=now)
 
 

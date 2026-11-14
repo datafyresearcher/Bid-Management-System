@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 from app.services.utils import utcnow
 from app.source_registry import BRIDGE_FED_SOURCES
@@ -75,6 +76,11 @@ def gate_task(g, include_opportunity=True):
             "state": g.opportunity.state,
             "submission_deadline": iso(g.opportunity.submission_deadline),
             "score_total": g.opportunity.score_total,
+            # What is on file while the gate is being decided — at Stage 1 the
+            # decision is taken on the notice and the bidding document, and
+            # the review card says whether they have arrived.
+            "documents_status": g.opportunity.documents_status,
+            "documents_count": len(g.opportunity.documents or []),
             "source": source_attribution(g.opportunity),
         }
     return data
@@ -215,6 +221,10 @@ def related_documents(o) -> list:
 
 
 def document(d):
+    # has_file: whether the file itself can be handed back — the disk copy or
+    # the copy kept in the database. Alongside source_url it is what lets the
+    # record page offer "open the stored file" next to "verify it on the
+    # portal".
     return {
         "id": d.id,
         "filename": d.filename,
@@ -223,6 +233,8 @@ def document(d):
         "pages": d.pages,
         "parsed": d.parsed,
         "parse_status": d.parse_status,
+        "source_url": d.source_url or "",
+        "has_file": bool((d.data is not None and len(d.data) > 0) or (d.file_path and Path(d.file_path).exists())),
         "created_at": iso(d.created_at),
     }
 

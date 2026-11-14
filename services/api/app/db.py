@@ -131,6 +131,11 @@ ADDED_COLUMNS = {
     ],
     "documents": [
         ("source_url", "VARCHAR(600) DEFAULT ''"),
+        # The file itself, so a stored document keeps opening wherever the
+        # system runs. PostgreSQL calls the type BYTEA and SQLite calls it
+        # BLOB; migrate_columns writes the name the running database answers
+        # to.
+        ("data", "BYTEA"),
     ],
 }
 
@@ -139,6 +144,12 @@ def migrate_columns():
     """Add any missing columns to existing tables. Safe to run on every start."""
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
+    # The one type the two supported databases name differently: a binary
+    # column is BYTEA on PostgreSQL and BLOB on SQLite.
+    if engine.dialect.name == "sqlite":
+        ddl_for = lambda ddl: ddl.replace("BYTEA", "BLOB")  # noqa: E731
+    else:
+        ddl_for = lambda ddl: ddl  # noqa: E731
     for table, columns in ADDED_COLUMNS.items():
         if table not in existing_tables:
             continue
@@ -148,7 +159,7 @@ def migrate_columns():
                 continue
             try:
                 with engine.begin() as conn:
-                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {ddl}'))
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {ddl_for(ddl)}'))
                 logger.info("Migrated: added %s.%s", table, name)
             except Exception as exc:
                 logger.warning("Could not add %s.%s: %s", table, name, exc)

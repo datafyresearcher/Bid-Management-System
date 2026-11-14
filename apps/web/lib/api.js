@@ -62,6 +62,48 @@ export async function api(path, options = {}) {
   return data;
 }
 
+/** Fetch a file behind the auth header and hand it to the browser to save.
+
+  A plain link cannot carry the signed-in token, so a download goes through
+  the same authenticated fetch as everything else and is handed over as a
+  blob — the pattern the audit CSV uses. The name the server sent with the
+  file wins; the caller's is the fallback. */
+export async function apiDownload(path, fallbackName = "document") {
+  const token = getToken();
+  const headers = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const resp = await fetch(API + path, { headers });
+  if (resp.status === 401) {
+    clearSession();
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
+    throw new Error("Unauthorized");
+  }
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try {
+      const body = await resp.json();
+      if (body && body.detail) detail = body.detail;
+    } catch {
+      /* an error body is not always JSON — the status text still says something */
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  const disposition = resp.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const name = match ? decodeURIComponent(match[1]) : fallbackName;
+  const blob = await resp.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export function fmtMoney(value, currency = "PKR") {
   if (value === null || value === undefined || value === "") return "—";
   const num = Number(value);

@@ -97,6 +97,14 @@ def open_gate(db, opp, gate, title, owner_role=None, sla_hours=None, inputs=None
         severity="warning" if sla_hours <= 24 else "info",
         opportunity_id=opp.id,
     )
+    if gate == 1:
+        # The Go/No-Go decision is taken on the documents, so the tender
+        # notice and the bidding document are fetched while the review is
+        # open, not only after it is approved. The reviewer opens the bid
+        # room and finds them on file.
+        from app.services import documents
+
+        documents.ensure_stage1_documents(db, opp)
     return task
 
 

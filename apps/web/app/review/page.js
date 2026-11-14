@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, decisionLabel, fmtDateTime, gateStatusLabel, STAGE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
+import { api, cacheGet, cacheSet, deadlineInfo, DECISIONS, decisionLabel, documentsStatusLabel, fmtDateTime, gateStatusLabel, STAGE_LABELS, slaCountdown, slaIsOverdue } from "../../lib/api";
 import BrandLoader from "../../components/Loading";
 
 const PAGE_SIZE = 50;
@@ -171,6 +171,23 @@ export default function ReviewPage() {
               <strong>Tender closes {dl.label}</strong>{" "}
               {dl.days !== null ? `(${dl.countdown})` : ""}
               {dl.urgent ? " — prioritise this stage" : ""}
+            </p>
+          ) : null}
+          {g.gate === 1 && g.opportunity ? (
+            // Stage 1 is decided on the documents, so the review card carries
+            // what has arrived and the portal links to read them where they
+            // were published.
+            <p className="muted">
+              <strong>Documents on file:</strong>{" "}
+              {g.opportunity.documents_count
+                ? `${g.opportunity.documents_count} — ${documentsStatusLabel(g.opportunity.documents_status)}`
+                : documentsStatusLabel(g.opportunity.documents_status)}
+              {g.opportunity.source?.document_url ? (
+                <> · <a className="src-link" href={g.opportunity.source.document_url} target="_blank" rel="noreferrer noopener">Open bidding document ↗</a></>
+              ) : null}
+              {g.opportunity.source?.notice_url ? (
+                <> · <a className="src-link" href={g.opportunity.source.notice_url} target="_blank" rel="noreferrer noopener">Open notice ↗</a></>
+              ) : null}
             </p>
           ) : null}
 

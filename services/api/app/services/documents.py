@@ -40,6 +40,35 @@ AWAITING_BRIDGE = "awaiting_bridge"
 # that arrives.
 SUMMARY_FILENAME = "notice_summary.txt"
 
+# The largest file kept in the database as its own bytes. The disk copy
+# beside it lives on whatever filesystem the instance runs on, and a
+# serverless deployment sweeps that away between requests — so a document
+# smaller than this is carried in the database as well, and keeps opening
+# wherever the system runs. A file past the ceiling is not carried there; it
+# keeps its disk copy and its read text.
+MAX_INLINE_BYTES = 20_000_000
+
+# A fetch for one tender — resolve the portal's page, download the files —
+# can take the better part of half a minute when a portal is slow. A request
+# with less left than this skips the fetch rather than run past its own
+# deadline; the tender's documents are then fetched when its Stage 1 decision
+# runs the full analysis.
+STAGE1_FETCH_MIN_SECONDS = 15.0
+
+# The document type given to the notice a buyer publishes to announce the
+# tender, as opposed to the bidding document that carries the terms.
+NOTICE_DOC_TYPE = "Tender notice"
+
+
+def filename_from_url(url: str) -> str:
+    """The file name a portal address ends with."""
+    return (url or "").split("?")[0].rsplit("/", 1)[-1]
+
+
+def safe_filename(filename: str) -> str:
+    """The name a document is filed under."""
+    return re.sub(r"[^A-Za-z0-9._\- ]", "_", filename)[:180]
+
 
 def page_count(text: str) -> int:
     """How many pages a document's text holds."""
@@ -99,10 +128,10 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
     return chunks
 
 
-def save_document(db, opp, filename: str, content: bytes, source_url: str = "") -> Document:
+def save_document(db, opp, filename: str, content: bytes, source_url: str = "", doc_type: str = "") -> Document:
     folder = storage_path() / "documents" / str(opp.id)
     folder.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^A-Za-z0-9._\- ]", "_", filename)[:180]
+    safe_name = safe_filename(filename)
     path = folder / safe_name
     path.write_bytes(content)
 
@@ -110,7 +139,7 @@ def save_document(db, opp, filename: str, content: bytes, source_url: str = "") 
     doc = Document(
         opportunity_id=opp.id,
         filename=safe_name,
-        doc_type=classify_doc(filename),
+        doc_type=doc_type or classify_doc(filename),
         file_path=str(path),
         source_url=(source_url or "")[:600],
         size=len(content),
@@ -118,6 +147,10 @@ def save_document(db, opp, filename: str, content: bytes, source_url: str = "") 
         parsed=not text.startswith("[PARSE_ERROR]"),
         parse_status="" if not text.startswith("[PARSE_ERROR]") else text[:200],
         content_text=text,
+        # The file itself, up to the ceiling — see MAX_INLINE_BYTES. This is
+        # what lets the bid team open the document from the record wherever
+        # the system runs, not only on the instance that downloaded it.
+        data=content if len(content) <= MAX_INLINE_BYTES else None,
     )
     db.add(doc)
     db.commit()
@@ -135,11 +168,58 @@ def save_document(db, opp, filename: str, content: bytes, source_url: str = "") 
     return doc
 
 
+def _already_on_file(db, opp) -> tuple[set, set]:
+    """What a tender already carries: its file names, and the addresses files
+    were fetched from. A document is matched on the address first — the name
+    is the fallback for files fetched before addresses were kept.
+
+    Read from the database rather than the record's loaded collection: the
+    session does not expire on commit, so a collection loaded before this
+    request saved documents would not show them.
+    """
+    rows = db.execute(select(Document).where(Document.opportunity_id == opp.id)).scalars().all()
+    names = {doc.filename for doc in rows if doc.filename}
+    urls = {(doc.source_url or "").strip() for doc in rows if (doc.source_url or "").strip()}
+    return names, urls
+
+
+def _ref_addresses(ref: dict) -> dict:
+    """The portal address each file a notice publishes is fetched from.
+
+    A file is filed under the name its address ends with, so the address can
+    be kept on the stored document — the record then carries, next to every
+    file, the link to open it on the portal and confirm the two are the same.
+    """
+    addresses: dict[str, str] = {}
+    for key in ("document_url", "url", "notice_url", "bidding_document_url"):
+        url = (ref.get(key) or "").strip()
+        if url:
+            addresses.setdefault(filename_from_url(url), url)
+    for entry in ref.get("related_documents") or []:
+        if isinstance(entry, dict):
+            url = (entry.get("url") or "").strip()
+            if url:
+                addresses.setdefault(filename_from_url(url), url)
+    return addresses
+
+
 def fetch_for_opportunity(db, opp) -> int:
+    """Fetch the tender's documents and file them.
+
+    Every notice the record was captured from publishes a bidding document
+    and usually the tender notice as a file of its own, plus any correction
+    published against it. Each is downloaded, stored whole, and kept with the
+    address it came from, so what is on file can always be checked against
+    what the portal still publishes. A file already on the record is not
+    fetched a second time — matched on the address it was fetched from, then
+    on its name — so a fetch that runs twice, once when the tender reaches
+    Stage 1 and again when it is approved, files nothing twice.
+    """
     from app.connectors.registry import get_connector
     from app.models import Source
 
     fetched = 0
+    on_file_names, on_file_urls = _already_on_file(db, opp)
     refs = list(opp.source_refs or [])
     resolved_links = {}
     for ref in refs:
@@ -155,6 +235,7 @@ def fetch_for_opportunity(db, opp) -> int:
         if not connector:
             continue
         native_id = ref.get("native_id") or ""
+        addresses = _ref_addresses(ref)
         fetched_docs = connector.fetch_documents(native_id, ref=ref)
         # A portal may publish the document only behind a button on the
         # tender's page, in which case the file that was read from is kept on
@@ -163,13 +244,37 @@ def fetch_for_opportunity(db, opp) -> int:
         resolved = getattr(connector, "last_document_url", "") or ""
         if resolved:
             resolved_links[native_id] = resolved
-        if fetched_docs is None:
-            continue
-        for filename, content in fetched_docs:
+        for filename, content in fetched_docs or []:
             if len(content) > 50 * 1024 * 1024:
                 continue
-            save_document(db, opp, filename, content)
+            if safe_filename(filename) in on_file_names:
+                continue
+            doc = save_document(
+                db, opp, filename, content, source_url=addresses.get(filename_from_url(filename), "")
+            )
+            on_file_names.add(doc.filename)
+            if doc.source_url:
+                on_file_urls.add(doc.source_url)
             fetched += 1
+
+        # The tender notice itself. The bidding document is what the analysis
+        # reads, but the notice is what the buyer published to announce the
+        # tender, and the bid team verifies the one against the other — so it
+        # is fetched and filed with the rest. A notice that is a web page
+        # rather than a file (WAPDA's notice is the post itself) is refused
+        # by the downloader, and honestly left as a link.
+        notice_url = (ref.get("notice_url") or "").strip()
+        if notice_url and notice_url not in on_file_urls:
+            if safe_filename(filename_from_url(notice_url)) not in on_file_names:
+                downloaded = connector.download_document(notice_url)
+                if downloaded:
+                    filename, content = downloaded
+                    doc = save_document(
+                        db, opp, filename, content, source_url=notice_url, doc_type=NOTICE_DOC_TYPE
+                    )
+                    on_file_names.add(doc.filename)
+                    on_file_urls.add(doc.source_url or notice_url)
+                    fetched += 1
 
     if resolved_links:
         _keep_resolved_links(opp, resolved_links)
@@ -185,11 +290,15 @@ def fetch_for_opportunity(db, opp) -> int:
     # Whether the file itself was retrieved or not, the record has to say
     # where the bidding document lives. A tender whose document could not be
     # downloaded is still a tender the bid team has to open, so the link is
-    # kept on the record and shown as a download link.
-    if has_document_link(opp):
-        opp.documents_status = "fetched" if fetched else "link_only"
-    elif fetched:
+    # kept on the record and shown as a download link. A pass that found
+    # files reports them; a pass that found nothing new never demotes a
+    # record that already carries documents — uploaded by hand, or fetched by
+    # an earlier pass — to link-only.
+    if fetched:
         opp.documents_status = "fetched"
+    elif opp.documents_status not in ("uploaded", "parsed", "fetched"):
+        if has_document_link(opp):
+            opp.documents_status = "link_only"
     db.commit()
     return fetched
 
@@ -299,6 +408,13 @@ def pending_document_urls(opp) -> list[dict]:
             candidates.append(
                 {"url": primary, "kind": "bidding document", "title": "Bidding document"}
             )
+        # The tender notice the buyer published to announce the tender. Where
+        # the notice is a file of its own the desk's machine fetches it with
+        # the rest; where the notice is only a web page the downloader
+        # refuses it and the link stays as the way to read it.
+        notice = (ref.get("notice_url") or "").strip()
+        if notice:
+            candidates.append({"url": notice, "kind": "notice", "title": "Tender notice"})
         for entry in ref.get("related_documents") or []:
             if isinstance(entry, dict) and entry.get("url"):
                 candidates.append(
@@ -315,7 +431,7 @@ def pending_document_urls(opp) -> list[dict]:
             seen.add(url)
             if url in fetched_from:
                 continue
-            name = url.split("?")[0].rsplit("/", 1)[-1]
+            name = filename_from_url(url)
             if name and name in on_file:
                 continue
             wanted.append({**candidate, "filename": name})
@@ -411,6 +527,46 @@ def mark_awaiting_bridge(db, opp) -> int:
     opp.documents_status = AWAITING_BRIDGE
     db.commit()
     return saved
+
+
+def ensure_stage1_documents(db, opp) -> None:
+    """Put the tender's documents in hand while Stage 1 is being decided.
+
+    Stage 1 is the Go/No-Go review, and the decision is taken on the
+    documents: the notice says what the buyer is buying, the bidding document
+    says on what terms. So both are fetched when the review opens, not only
+    once it is approved — the reviewer opens the bid room and finds them on
+    file, each with the link to the portal address it came from.
+
+    A tender whose portal answers this deployment has its files fetched here,
+    bounded by what the request can still afford; a tender whose portal
+    refuses datacenter connections is marked for the bid desk's capture
+    bridge, which fetches them on its next run. Either way the fetch is
+    idempotent — a tender whose documents are already on file gets nothing
+    downloaded twice — and anything that could not be got in time is fetched
+    again by the analysis that runs on the Stage 1 decision.
+    """
+    from app import runtime
+    from app.services import workflow
+
+    if workflow._needs_the_bridge(db, opp):
+        mark_awaiting_bridge(db, opp)
+        return
+    left = runtime.remaining()
+    if left is not None and left < STAGE1_FETCH_MIN_SECONDS:
+        return
+    try:
+        fetch_for_opportunity(db, opp)
+    except Exception as exc:
+        # The gate has opened either way. Whatever went wrong is recorded and
+        # the fetch is retried on the Stage 1 decision, which runs the same
+        # fetch before the analysis.
+        audit.record(
+            db,
+            "documents.stage1_fetch_failed",
+            opportunity_id=opp.id,
+            detail={"error": str(exc)[:200]},
+        )
 
 
 def search_chunks(db, opportunity_id: int, query: str, limit: int = 5):
