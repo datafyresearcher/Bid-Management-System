@@ -399,3 +399,31 @@ def test_the_review_card_is_told_what_has_arrived(db, epms_source):
 
     assert data["opportunity"]["documents_status"] == "uploaded"
     assert data["opportunity"]["documents_count"] == 1
+
+
+def test_a_long_document_is_read_only_to_its_ceiling(db, epms_source, monkeypatch):
+    """Reading a huge tender book stops at the ceiling instead of the request.
+
+    The file is stored whole either way; the text says where the read
+    stopped, so nobody mistakes a partial read for the whole document.
+    """
+    import io
+
+    from pypdf import PdfWriter
+
+    from app.services import documents
+
+    monkeypatch.setattr(documents, "MAX_PAGES_READ", 3)
+    writer = PdfWriter()
+    for _ in range(5):
+        writer.add_blank_page(width=200, height=200)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    content = buffer.getvalue()
+
+    opp = make_opportunity(db, epms_source)
+    doc = documents.save_document(db, opp, "tender-book.pdf", content)
+
+    assert doc.size == len(content)
+    assert "stopped at page 4 of 5" in doc.content_text
+    assert "on file whole" in doc.content_text

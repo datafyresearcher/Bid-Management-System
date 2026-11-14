@@ -1,5 +1,6 @@
 import io
 import re
+import time
 from pathlib import Path
 
 from sqlalchemy import delete, or_, select
@@ -78,6 +79,15 @@ def safe_filename(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._\- ]", "_", filename)[:180]
 
 
+# Reading the text out of a document is bounded. A tender book of hundreds
+# of pages, or one whose structure pypdf picks through slowly, could hold
+# the request that carries it past its whole life — the read stops at the
+# budget or the page ceiling, and says where it stopped. The file itself is
+# stored whole either way; the text is what the analysis works from.
+TEXT_BUDGET_SECONDS = 15.0
+MAX_PAGES_READ = 150
+
+
 def page_count(text: str) -> int:
     """How many pages a document's text holds."""
     if not text:
@@ -107,7 +117,17 @@ def extract_text(filename: str, content: bytes) -> str:
             from pypdf import PdfReader
 
             reader = PdfReader(io.BytesIO(content))
-            return PAGE_BREAK.join((page.extract_text() or "") for page in reader.pages)[:400_000]
+            pages = []
+            deadline = time.monotonic() + TEXT_BUDGET_SECONDS
+            for index, page in enumerate(reader.pages):
+                if index >= MAX_PAGES_READ:
+                    pages.append(f"[Document read stopped at page {index + 1} of {len(reader.pages)} — the ceiling of pages read. The file is on file whole.]")
+                    break
+                if index and time.monotonic() > deadline:
+                    pages.append(f"[Document read stopped at page {index + 1} of {len(reader.pages)} — the time budget for reading ran out. The file is on file whole.]")
+                    break
+                pages.append(page.extract_text() or "")
+            return PAGE_BREAK.join(pages)[:400_000]
         if name.endswith(".docx"):
             from docx import Document as DocxDocument
 
