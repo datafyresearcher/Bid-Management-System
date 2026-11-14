@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, cacheGet, cacheSet, clearSession, fmtDateTime, getToken } from "../../lib/api";
 import BrandLoader from "../../components/Loading";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Same contract as lib/api.js: "" = same origin (self-hosted behind nginx),
+// unset = local dev default. || would rewrite "" to localhost:8000.
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function pct(value) {
   if (value === null || value === undefined) return "—";

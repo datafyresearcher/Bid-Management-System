@@ -99,17 +99,18 @@ from inside Pakistan, and the deployed review environment keeps each instance's 
 instance, so the source register's **Scan** button reads a portal on demand.**
 
 
-### Option A — Docker Compose (everything)
+### Option A — Docker Compose (demo, fixtures)
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 - Web app: http://localhost:3000
 - API + Swagger docs: http://localhost:8000/docs
 
 The `api` container seeds the database on first start (demo users, sources, knowledge base) and
-runs the scheduled scan every hour (`BMS_SCAN_INTERVAL_SECONDS`).
+runs the scheduled scan every hour (`BMS_SCAN_INTERVAL_SECONDS`). For the real deployment on your
+own server, use the production stack below.
 
 ### Option B — Local development
 
@@ -268,6 +269,89 @@ cd services/api
 .venv\Scripts\python.exe smoke_test.py      # needs the API running
 # BMS_BASE_URL=http://localhost:8017 .venv\Scripts\python.exe smoke_test.py
 ```
+
+## Self-hosted deployment (own server, Docker)
+
+The production stack runs all three parts — PostgreSQL, the FastAPI backend and the Next.js
+frontend — as containers on one machine, behind a single nginx port. Anyone with Docker on the
+server can clone and run it; no Vercel or Supabase account is involved.
+
+```
+                     ┌── one port, BMS_HTTP_PORT (default 80) ──┐
+  browser ──────────►│  nginx   /            → web (Next.js)    │
+  capture bridge ───►│          /api, /docs  → api (FastAPI)    │
+                     └──────────────────────┬───────────────────┘
+                                            │
+                            db (PostgreSQL) ┤ storage volume (documents, snapshots)
+                            scheduler inside the api container drives the
+                            daily scan + digest — no cron request needed
+```
+
+### Bring it up
+
+On the server (any Linux with Docker Engine + the compose plugin; Docker Desktop on Windows also
+works):
+
+```bash
+git clone <repository-url> bid-management-system
+cd bid-management-system
+
+cp .env.example .env
+# now edit .env — three values are REQUIRED:
+#   POSTGRES_PASSWORD    openssl rand -hex 24
+#   BMS_SECRET_KEY       python -c "import secrets; print(secrets.token_hex(32))"
+#   BMS_ADMIN_PASSWORD   the sign-in password for admin@ahte.local
+
+docker compose up -d --build
+```
+
+Open `http://<server-ip>/` (or `http://<server-ip>:<BMS_HTTP_PORT>/`) and sign in as
+`admin@ahte.local` with `BMS_ADMIN_PASSWORD`. Other staff accounts are created from the app's
+admin tab — no demo accounts exist in this stack. Swagger docs are at `http://<server-ip>/docs`.
+
+### What first boot does, in order
+
+1. PostgreSQL starts with a fresh volume; the API waits for its healthcheck.
+2. The API creates the schema, seeds the knowledge base and creates the single administrator
+   account (`BMS_SEED_ON_STARTUP=true`).
+3. `BMS_ADMIN_PASSWORD` is applied on **every** boot — changing it in `.env` and restarting is the
+   documented way to rotate the admin password (including recovery).
+4. The live portal read runs (PPRA Punjab, EPMS, EPADS, NTDC, WAPDA), then the built-in scheduler
+   takes over the daily scan and digest. `BMS_SCAN_INTERVAL_SECONDS` sets the cadence.
+
+### Notes for the Lahore server
+
+- **Firewall**: only the nginx port (`BMS_HTTP_PORT`) needs to be reachable from the office. The
+  database is published on `127.0.0.1:5433` on the server itself (for `pg_dump` / `psql`) and
+  nothing else is exposed.
+- **Portal access**: PPRA Punjab and WAPDA refuse datacenter IPs, and eproc.punjab refuses them
+  outright — a server in a Lahore datacenter will still see those blocks. The capture bridge on
+  the bid desk machine keeps working; point it at this server
+  (`BMS_CAPTURE_SECRET` in `.env`, bridge posts to `http://<server-ip>:<BMS_HTTP_PORT>/api/sources/capture`).
+  Sources the server *can* read directly (NTDC, EPADS, EPMS) are read by the scheduler as usual.
+- **TLS**: the stack serves plain HTTP on one port. For access over a domain name, put a
+  TLS-terminating proxy in front (Caddy or certbot + nginx) and keep `BMS_HTTP_PORT` bound to
+  localhost; on a LAN, plain HTTP is the usual trade-off.
+- **LLM / email**: `BMS_LLM_PROVIDER`, `OPENROUTER_API_KEY`/`OPENAI_API_KEY` and the
+  `BMS_SMTP_*` group work exactly as documented in `.env.example`; the digest goes out by SMTP
+  when those are set, otherwise it stays in the dashboard inbox.
+
+### Day-to-day
+
+```bash
+docker compose ps                 # what is running, healthy or not
+docker compose logs -f api        # follow the API log
+git pull && docker compose up -d --build   # upgrade: schema migrations run at start-up
+
+# backup (database + documents):
+docker compose exec db pg_dump -U bms bms > bms-$(date +%F).sql
+docker run --rm -v bid-management-system_storage_data:/data -v $PWD:/out alpine \
+    tar czf /out/bms-storage-$(date +%F).tar.gz -C /data .
+```
+
+The stack pins `BMS_DATABASE_URL`, `BMS_FIXTURES=false` and `BMS_SCHEDULER_ENABLED=true`
+regardless of what else is in `.env`; the demo stack that ships fixtures and the printed demo
+accounts is `docker-compose.dev.yml` and is not for production.
 
 ## CI/CD — automatic deployment to Vercel
 

@@ -1,6 +1,11 @@
 import { cacheClear } from "./cache";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Set at build time. "" means same origin — the browser asks the server that
+// served this page, which is how the self-hosted Docker deployment works
+// (nginx routes /api to the API container). Unset means local dev against a
+// bare uvicorn on :8000. A plain || would turn "" into localhost:8000 and
+// silently point every visitor's browser at their own machine.
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // Pages read and fill the session cache through this module, so the fetch
 // helper and its cache travel together.

@@ -1,0 +1,11 @@
+# Keep the build context clean. Without this, a checkout that has already
+# been developed on would copy the host's node_modules over the ones the
+# image installed, and the build would break with mismatched native binaries.
+node_modules/
+.next/
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+*.log
+.env*

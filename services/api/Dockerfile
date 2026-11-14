@@ -8,9 +8,13 @@ COPY . .
 
 # The container does not need to be root. It writes only to the storage
 # directory, which the operator mounts or points at a volume anyway.
+# /data/storage must exist here and be owned by the runtime user: when a
+# named volume is first mounted at that path, Docker seeds it with the
+# directory's ownership from the image. Without this the volume would be
+# root-owned and the API could not write a single document.
 RUN useradd --system --uid 10001 --no-create-home bms \
-    && mkdir -p /app/storage \
-    && chown -R bms:bms /app/storage
+    && mkdir -p /app/storage /data/storage \
+    && chown -R bms:bms /app/storage /data/storage
 USER bms
 
 EXPOSE 8000

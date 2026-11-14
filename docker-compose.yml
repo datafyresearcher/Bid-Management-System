@@ -1,54 +1,123 @@
+# BMS — self-hosted deployment (frontend + backend + database in Docker).
+#
+# Clone the repository, create .env (see .env.example — at minimum
+# POSTGRES_PASSWORD, BMS_SECRET_KEY and BMS_ADMIN_PASSWORD), then:
+#
+#     docker compose up -d --build
+#
+# The stack is fronted by one nginx port (80 by default, BMS_HTTP_PORT in
+# .env). The browser only ever talks to that port: nginx serves the Next.js
+# frontend on / and forwards /api to the API container, so the frontend and
+# backend share one origin and CORS never enters the picture. The database
+# is not exposed beyond the compose network (only a loopback port on the
+# host for psql / pg_dump).
+#
+# A separate demo stack lives in docker-compose.dev.yml (fixtures mode,
+# printed demo passwords — never use it for the real deployment).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16
     environment:
+      # User and database name are fixed here and referenced by the API's
+      # BMS_DATABASE_URL below — change both together if you ever must.
       POSTGRES_USER: bms
-      POSTGRES_PASSWORD: bms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}
       POSTGRES_DB: bms
+      TZ: ${BMS_TZ:-Asia/Karachi}
     ports:
-      - "5432:5432"
+      # Host loopback only: for pg_dump / psql from the server itself.
+      # The database is deliberately not reachable from the network.
+      - "127.0.0.1:5433:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bms"]
+      test: ["CMD-SHELL", "pg_isready -U bms -d bms"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
 
   api:
     build:
       context: ./services/api
+    # Everything under BMS_ in .env reaches the API through env_file.
+    # The values below are the ones the self-hosted stack must pin
+    # regardless of what a development .env happens to contain — they take
+    # precedence over env_file.
     environment:
-      BMS_DATABASE_URL: postgresql+psycopg://bms:bms@db:5432/bms
+      # sslmode=disable: the connection never leaves the compose network's
+      # internal bridge. Point at an external PostgreSQL instead and set its
+      # real URL here (with sslmode=require).
+      BMS_DATABASE_URL: postgresql+psycopg://bms:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}@db:5432/bms?sslmode=disable
       BMS_STORAGE_DIR: /data/storage
-      BMS_FIXTURES: "true"
-      BMS_FIXTURES_DIR: /fixtures
-      BMS_LLM_PROVIDER: ${BMS_LLM_PROVIDER:-mock}
+      # Live portals, not the bundled fixtures. The demo stack is
+      # docker-compose.dev.yml; printed demo passwords must not exist here.
+      BMS_FIXTURES: "false"
+      # First boot creates the schema, the knowledge base and the single
+      # administrator account (password = BMS_ADMIN_PASSWORD from .env).
+      # Later boots find everything in place and seed nothing new.
+      BMS_SEED_ON_STARTUP: "true"
+      # This container is a long-running process, so the daily scan and
+      # digest are driven by the built-in scheduler — no external cron
+      # needed (the Vercel deployment uses /api/cron/tick instead).
       BMS_SCHEDULER_ENABLED: "true"
-      BMS_SCAN_INTERVAL_SECONDS: "3600"
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      BMS_SECRET_KEY: ${BMS_SECRET_KEY:-change-me-in-production}
-    ports:
-      - "8000:8000"
+      TZ: ${BMS_TZ:-Asia/Karachi}
+    env_file:
+      # The same .env.example the developer copies. Optional: the stack
+      # still comes up without it, but without BMS_ADMIN_PASSWORD there is
+      # no account to sign in with, and without BMS_SECRET_KEY sign-in is
+      # refused (the API checks for the default signing key).
+      - path: ${BMS_ENV_FILE:-.env}
+        required: false
     volumes:
-      - api_storage:/data/storage
-      - ./fixtures:/fixtures:ro
+      - storage_data:/data/storage
     depends_on:
       db:
         condition: service_healthy
-    command: ["sh", "-c", "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    # --proxy-headers: behind nginx, the sign-in rate limiter must see the
+    # visitor's address from X-Forwarded-For, not the nginx container's.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
+    restart: unless-stopped
+    logging: *default-logging
 
   web:
     build:
       context: ./apps/web
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        # "" (empty) bakes same-origin API calls into the bundle — the
+        # browser asks nginx for /api on whatever address it used to reach
+        # this server, so http://<server-ip>:<BMS_HTTP_PORT> works as is.
+        # Set NEXT_PUBLIC_API_URL in .env only for a split deployment
+        # (frontend and API on different hosts); a change needs
+        #   docker compose build web && docker compose up -d web
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  nginx:
+    image: nginx:1.27-alpine
     ports:
-      - "3000:3000"
+      - "${BMS_HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api
+      - web
+    restart: unless-stopped
+    logging: *default-logging
 
 volumes:
-  db_data:
-  api_storage:
+  pgdata:
+  storage_data:
