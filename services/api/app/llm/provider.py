@@ -59,6 +59,43 @@ def _cache_key(provider, model, task, system, user, max_tokens):
     return digest.hexdigest()
 
 
+class FetchError(RuntimeError):
+    """A model call could not be completed."""
+
+
+def _stream_chat(url, headers, payload, timeout, hard_stop):
+    """POST one chat request and read the answer inside a hard deadline.
+
+    The read timeout is not a total deadline. A router that trickles its
+    answer out in small chunks resets it with every chunk, and a free-tier
+    model that thinks for two minutes holds the request for two minutes —
+    which is how an extraction bound of twenty-five seconds became a
+    hundred-second wait and a killed request. The answer is therefore read
+    as a stream and cut at the call's own hard stop, whatever the server
+    does with it.
+
+    Returns ``(status_code, body_bytes, cut_off)``. A cut body is incomplete
+    by definition; the caller treats it as a failed call.
+    """
+    chunks = []
+    cut_off = False
+    with httpx.stream(
+        "POST",
+        url,
+        headers=headers,
+        json=payload,
+        timeout=timeout,
+    ) as resp:
+        if resp.status_code >= 400:
+            return resp.status_code, resp.read(), False
+        for chunk in resp.iter_raw():
+            chunks.append(chunk)
+            if time.monotonic() > hard_stop:
+                cut_off = True
+                break
+    return resp.status_code, b"".join(chunks), cut_off
+
+
 class OpenAICompatibleProvider:
     """Provider for any OpenAI-compatible ``/chat/completions`` endpoint.
 
@@ -169,10 +206,10 @@ class OpenAICompatibleProvider:
             attempts = attempt
             attempt_timeout = max(1.0, min(float(settings.llm_timeout_seconds), remaining))
             try:
-                resp = httpx.post(
+                status, body, cut_off = _stream_chat(
                     f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
+                    {"Authorization": f"Bearer {self.api_key}"},
+                    {
                         "model": self.model,
                         "messages": [
                             {"role": "system", "content": system},
@@ -181,11 +218,15 @@ class OpenAICompatibleProvider:
                         "max_tokens": max_tokens,
                         "temperature": settings.llm_temperature,
                     },
-                    timeout=attempt_timeout,
+                    attempt_timeout,
+                    hard_stop,
                 )
-                if resp.status_code >= 400:
-                    last_error = f"http {resp.status_code}: {resp.text[:200]}"
-                    if resp.status_code in RETRYABLE_STATUS and attempt <= settings.llm_max_retries:
+                if cut_off:
+                    last_error = "the model's answer was cut at the call's time budget"
+                    break
+                if status >= 400:
+                    last_error = f"http {status}: {body[:200]}"
+                    if status in RETRYABLE_STATUS and attempt <= settings.llm_max_retries:
                         delay = min(8.0, 0.75 * (2 ** (attempt - 1)))
                         if time.monotonic() + delay >= hard_stop:
                             break
@@ -200,7 +241,7 @@ class OpenAICompatibleProvider:
                         latency_ms=int((time.time() - started) * 1000),
                     )
 
-                data = resp.json()
+                data = json.loads(body)
                 text = self._read_text(data)
                 usage = data.get("usage") or {}
                 tokens = int(usage.get("total_tokens", 0) or 0)
