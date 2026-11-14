@@ -240,46 +240,60 @@ def backfill_stage1_bridge_documents():
     marked, so they wait for their documents until the decision is taken.
     This marks them too, once, on start-up: pending at Stage 1, fed by a
     bridge portal, and carrying no document yet.
+
+    One bulk update, and nothing else — this runs inside a serverless cold
+    start, where a write per record on a database reached over the network
+    costs more than the request is given. The placeholder summary the
+    ordinary marking path writes is skipped here: the record honestly reads
+    as waiting for its document, which it is.
     """
-    from sqlalchemy import select
+    from sqlalchemy import String, or_, select, update
 
     from app.config import settings
-    from app.models import GateTask, Opportunity
+    from app.models import Document, GateTask, Opportunity
     from app.source_registry import BRIDGE_FED_SOURCES
-    from app.services import documents as documents_service
+    from app.services.documents import AWAITING_BRIDGE
 
     if settings.fixtures:
         return 0
 
+    # The reference JSON carries the source code each record was captured
+    # from, and a record may carry more than one notice — so the match is on
+    # the JSON itself rather than on the one registry row it points at.
+    fed_by_the_bridge = or_(
+        *[Opportunity.source_refs.cast(String).contains(f'"{code}"') for code in BRIDGE_FED_SOURCES]
+    )
+    # Only the records that truly have no document yet — a document row
+    # beside the status is the truth the status must not contradict.
+    without_documents = ~select(Document.id).where(Document.opportunity_id == Opportunity.id).exists()
+
     session = SessionLocal()
     try:
-        rows = (
+        marked_ids = (
             session.execute(
-                select(Opportunity)
+                select(Opportunity.id)
                 .join(GateTask, GateTask.opportunity_id == Opportunity.id)
                 .where(
                     GateTask.gate == 1,
                     GateTask.status.in_(["PENDING", "OVERDUE"]),
                     Opportunity.documents_status.in_(["none", "metadata_only"]),
+                    without_documents,
+                    fed_by_the_bridge,
                 )
             )
             .scalars()
             .all()
         )
-        marked = 0
-        for opp in rows:
-            codes = {
-                ref.get("source_code")
-                for ref in (opp.source_refs or [])
-                if isinstance(ref, dict) and ref.get("source_code")
-            }
-            if not (codes & set(BRIDGE_FED_SOURCES)):
-                continue
-            if documents_service.mark_awaiting_bridge(session, opp):
-                marked += 1
-        if marked:
-            logger.info("Backfilled %s Stage-1 tenders as awaiting the bridge", marked)
-        return marked
+        if not marked_ids:
+            return 0
+        session.execute(
+            update(Opportunity)
+            .where(Opportunity.id.in_(marked_ids))
+            .values(documents_status=AWAITING_BRIDGE)
+        )
+        session.commit()
+        logger.info("Backfilled %s Stage-1 tenders as awaiting the bridge", len(marked_ids))
+        return len(marked_ids)
     except Exception as exc:
         logger.warning("Stage-1 bridge backfill skipped: %s", exc)
         session.rollback()
