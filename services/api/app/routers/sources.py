@@ -315,9 +315,15 @@ def capture_document(
     # the tender notice, a correction — and that is the type it is filed
     # under, rather than a guess from its name.
     doc_type = "Tender notice" if (kind or "").strip().lower() == "notice" else ""
-    documents_service.save_document(
-        db, opp, filename or "document.pdf", content, source_url=source_url, doc_type=doc_type
-    )
+    # A file already on file is not filed a second time. Two bridge runs can
+    # overlap, and a hand-over whose analysis was deferred can be retried
+    # after the file landed; the address it was fetched from is what says the
+    # copy already exists. The record is finished either way.
+    already = documents_service.find_by_source_url(opp, source_url)
+    if already is None:
+        documents_service.save_document(
+            db, opp, filename or "document.pdf", content, source_url=source_url, doc_type=doc_type
+        )
     # The stand-in written when nothing could be fetched is dropped now that
     # the real document has arrived, so the analysis reads the document and
     # not the summary of it.

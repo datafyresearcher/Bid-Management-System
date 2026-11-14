@@ -471,6 +471,17 @@ def pending_document_urls(opp) -> list[dict]:
     return wanted
 
 
+def find_by_source_url(opp, url: str):
+    """The document on file that was fetched from this address, if any."""
+    wanted = (url or "").strip()
+    if not wanted:
+        return None
+    for doc in opp.documents or []:
+        if (doc.source_url or "").strip() == wanted:
+            return doc
+    return None
+
+
 def drop_placeholder_summary(db, opp) -> bool:
     """Remove the notice summary once the real document has arrived.
 

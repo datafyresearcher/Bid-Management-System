@@ -485,3 +485,39 @@ def make_analysed_placeholder_opportunity(db):
     db.commit()
     db.refresh(opp)
     return opp
+
+
+def test_a_file_already_on_file_is_not_filed_twice(client, db, auth, live_mode):
+    """Two runs, or a retry after a deferred analysis, file one copy."""
+    from app.models import Opportunity
+
+    opp_id = _capture_one(client, auth, "Duplicate hand-over tender", "notice-dup1", "bidding-dup1")
+    opp = db.get(Opportunity, opp_id)
+    from app.services import workflow
+    workflow.run_analysis(db, opp)
+
+    files = {
+        "file": ("bidding-dup1.pdf", b"%PDF-1.4 " + BIDDING_TEXT.encode(), "application/pdf"),
+    }
+    data = {
+        "opportunity_id": str(opp_id),
+        "filename": "bidding-dup1.pdf",
+        "kind": "bidding document",
+        "source_url": "https://eproc.punjab.gov.pk/BiddingDocuments/bidding-dup1.pdf",
+    }
+    first = client.post(
+        "/api/sources/capture/document", data=data, files=files, headers={"X-Capture-Secret": SECRET}
+    )
+    assert first.status_code == 200, first.text
+
+    second = client.post(
+        "/api/sources/capture/document", data=data, files=files, headers={"X-Capture-Secret": SECRET}
+    )
+    assert second.status_code == 200, second.text
+
+    db.expire_all()
+    opp = db.get(Opportunity, opp_id)
+    same = [d for d in opp.documents if d.filename == "bidding-dup1.pdf"]
+    assert len(same) == 1, [d.filename for d in opp.documents]
+    # The record is finished either way — read, analysed, nothing waiting.
+    assert opp.documents_status in ("uploaded", "parsed")
